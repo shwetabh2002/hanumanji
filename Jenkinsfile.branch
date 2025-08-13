@@ -1,0 +1,46 @@
+def app = 'Unknown'
+pipeline {
+    agent any
+        
+
+    stages {
+        stage('Getting Secret') {
+            steps {
+                script {
+                    sh 'aws secretsmanager get-secret-value --secret-id dev/stage-backend --query "SecretString" --output text > .env'
+                }
+            }
+        }
+        stage('Docker Build') {
+            steps {
+                script {
+                    def branchName = env.BRANCH_NAME
+                    def featureName = branchName.split('/')[1].toLowerCase()
+                    docker.withRegistry('https://485200587121.dkr.ecr.ap-south-1.amazonaws.com', 'ecr:ap-south-1:jenkins-to-ecr-push') {
+                    def customImage = docker.build("devstage-nest-backend:${featureName}-v${env.BUILD_NUMBER}")
+                    customImage.push()
+                    }
+                }
+            }
+        }
+        stage('Fetch') {
+            steps {
+                git url: 'git@github.com:vatsanatech/infrastructure.git', 
+                    branch: 'main',
+                    credentialsId: 'git'
+            }
+        }
+        stage('AWS Dev Deploy') {
+            steps {
+                script {
+                    def branchName = env.BRANCH_NAME
+                    def featureName = branchName.split('/')[1].toLowerCase()
+                    sh 'kubectl config use-context arn:aws:eks:ap-south-1:485200587121:cluster/nonprod-cluster'
+                    sh """
+                        helm upgrade --install -n automate ${featureName}-nest-api ./helm/modules/nest-api -f ./helm/live/dev/nest-api-values.yaml --set ingress.hosts[0].host=${featureName}.dev.stage.in --set image.repository=485200587121.dkr.ecr.ap-south-1.amazonaws.com/devstage-nest-backend --set image.tag=${featureName}-v${env.BUILD_NUMBER} --set autoscaling.enabled=false
+                    """
+                }
+            }
+        }
+    }
+}

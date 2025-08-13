@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json.schemastore.org/nest-cli",
+  "collection": "@nestjs/schematics",
+  "sourceRoot": "src",
+  "compilerOptions": {
+    "deleteOutDir": true,
+    "assets": [
+      {
+        "include": "**/*.{cer,p8}",
+        "outDir": "dist/src"
+      }
+    ],
+    "webpack": false
+  },
+  "projects": {
+    "repository-cache": {
+      "type": "library",
+      "root": "libs/repository-cache",
+      "entryFile": "index",
+      "sourceRoot": "libs/repository-cache/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/repository-cache/tsconfig.lib.json"
+      }
+    },
+    "auth": {
+      "type": "library",
+      "root": "libs/auth",
+      "entryFile": "index",
+      "sourceRoot": "libs/auth/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/auth/tsconfig.lib.json"
+      }
+    },
+    "cache-manager": {
+      "type": "library",
+      "root": "libs/cache-manager",
+      "entryFile": "index",
+      "sourceRoot": "libs/cache-manager/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/cache-manager/tsconfig.lib.json"
+      }
+    },
+    "jobs": {
+      "type": "library",
+      "root": "libs/jobs",
+      "entryFile": "index",
+      "sourceRoot": "libs/jobs/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/jobs/tsconfig.lib.json"
+      }
+    },
+    "events": {
+      "type": "library",
+      "root": "libs/events",
+      "entryFile": "index",
+      "sourceRoot": "libs/events/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/events/tsconfig.lib.json"
+      }
+    },
+    "http": {
+      "type": "library",
+      "root": "libs/http",
+      "entryFile": "index",
+      "sourceRoot": "libs/http/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/http/tsconfig.lib.json"
+      }
+    },
+    "storage": {
+      "type": "library",
+      "root": "libs/storage",
+      "entryFile": "index",
+      "sourceRoot": "libs/storage/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/storage/tsconfig.lib.json"
+      }
+    },
+    "redis": {
+      "type": "library",
+      "root": "libs/redis",
+      "entryFile": "index",
+      "sourceRoot": "libs/redis/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/redis/tsconfig.lib.json"
+      }
+    }
+  }
+}

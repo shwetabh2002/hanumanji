@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "isolatedModules": false,
+    "plugins": [
+      {
+        "transform": "@nestia/core/lib/transform",
+        "validate": "assert",
+        "stringify": "assert"
+      },
+      { "transform": "@nestia/sdk/lib/transform" },
+      { "transform": "typia/lib/transform" }
+    ]
+  },
+  "include": ["**/*.ts", "types/*.ts", "tests/**/*.ts"]
+}
