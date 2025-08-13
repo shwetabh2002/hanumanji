@@ -67,4 +67,10 @@ export class UpdateUserDto {
   @ValidateNested()
   @Type(() => UpdateUserAddressDto)
   address?: UpdateUserAddressDto;
+
+  @ApiPropertyOptional({ description: 'Current location coordinates', type: CoordinatesDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CoordinatesDto)
+  currentLocation?: CoordinatesDto;
 } 

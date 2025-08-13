@@ -175,7 +175,7 @@ export class UserService implements IUserService {
     if (dto.email !== undefined) update.email = dto.email;
     if (dto.profilePicture !== undefined) update.profilePicture = dto.profilePicture;
     if (dto.dateOfBirth !== undefined) update.dateOfBirth = new Date(dto.dateOfBirth);
-
+    if (dto.currentLocation !== undefined) update.currentLocation = [dto.currentLocation.longitude, dto.currentLocation.latitude];
     if (dto.address) {
       update.address = {
         ...(dto.address.street !== undefined && { street: dto.address.street }),

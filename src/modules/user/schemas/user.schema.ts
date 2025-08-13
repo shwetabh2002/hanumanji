@@ -122,6 +122,13 @@ export class User {
 
   @Prop({ default: false })
   isPhoneVerified: boolean;
+
+  @Prop({
+    type: [Number],
+    required: true,
+    index: '2dsphere',
+  })
+  currentLocation: [number, number]; // [longitude, latitude]
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
