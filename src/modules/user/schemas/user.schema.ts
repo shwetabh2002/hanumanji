@@ -7,6 +7,9 @@ export type UserDocument = User & Document;
 @Schema({ _id: false })
 export class UserAddress {
   @Prop({ required: true })
+  displayAddress: string;
+
+  @Prop({ required: true })
   street: string;
 
   @Prop({ required: true })

@@ -7,6 +7,10 @@ export class JwtAuthMiddleware implements NestMiddleware {
   // Only allow registration without auth; everything else requires Authorization
   private readonly publicPaths: RegExp[] = [
     /^\/users\/register$/,
+    /^\/auth\/refresh$/,
+    /^\/users\/verify-otp$/,
+    /^\/users\/resend-otp$/,
+    /^\/auth\/login-otp$/,
   ];
 
   constructor(

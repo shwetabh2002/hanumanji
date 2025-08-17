@@ -7,6 +7,7 @@ import { UserController } from './user.controller';
 import { UserService } from './user.service';
 import { OtpService } from './services/otp.service';
 import { AuthModule } from '../auth/auth.module';
+import { GeocodingService } from './services/geocoding.service';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { AuthModule } from '../auth/auth.module';
   providers: [
     UserService,
     OtpService,
+    GeocodingService,
   ],
   controllers: [UserController],
   exports: [

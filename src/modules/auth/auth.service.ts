@@ -52,4 +52,16 @@ export class AuthService {
       },
     };
   }
+
+  buildRefreshResponse(user: UserDocument) {
+    const accessToken = this.signAccessToken(user);
+    const refreshToken = this.signRefreshToken(user);
+
+    return {
+      accessToken,
+      refreshToken,
+      tokenType: 'Bearer',
+      expiresIn: this.configService.get<string>('app.jwt.expiresIn'),
+    };
+  }
 } 

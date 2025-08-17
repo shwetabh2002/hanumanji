@@ -44,7 +44,6 @@ export enum DriverStatus {
   OFFLINE = 'offline',
   ONLINE = 'online',
   BUSY = 'busy',
-  UNAVAILABLE = 'unavailable',
 }
 
 export enum Environment {

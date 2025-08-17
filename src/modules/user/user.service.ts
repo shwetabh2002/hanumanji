@@ -12,6 +12,7 @@ import { OtpService } from './services/otp.service';
 import { UserRole } from '../../common/enums';
 import { AuthService } from '../auth/auth.service';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { GeocodingService } from './services/geocoding.service';
 
 @Injectable()
 export class UserService implements IUserService {
@@ -21,6 +22,7 @@ export class UserService implements IUserService {
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
     private readonly otpService: OtpService,
     private readonly authService: AuthService,
+    private readonly geocodingService: GeocodingService,
   ) {}
 
   async registerUser(registerUserDto: RegisterUserDto): Promise<RegisterResponseDto> {
@@ -166,6 +168,10 @@ export class UserService implements IUserService {
     return this.userModel.findOne({  phoneNumber }).exec();
   }
 
+  async findUserById(userId: string): Promise<UserDocument | null> {
+    return this.userModel.findById(userId).exec();
+  }
+
   // Public method to update generic user fields
   async updateUser(userId: string, dto: UpdateUserDto): Promise<UserDocument> {
     const update: any = {};
@@ -175,22 +181,32 @@ export class UserService implements IUserService {
     if (dto.email !== undefined) update.email = dto.email;
     if (dto.profilePicture !== undefined) update.profilePicture = dto.profilePicture;
     if (dto.dateOfBirth !== undefined) update.dateOfBirth = new Date(dto.dateOfBirth);
-    if (dto.currentLocation !== undefined) update.currentLocation = [dto.currentLocation.longitude, dto.currentLocation.latitude];
-    if (dto.address) {
-      update.address = {
-        ...(dto.address.street !== undefined && { street: dto.address.street }),
-        ...(dto.address.city !== undefined && { city: dto.address.city }),
-        ...(dto.address.state !== undefined && { state: dto.address.state }),
-        ...(dto.address.country !== undefined && { country: dto.address.country }),
-        ...(dto.address.zipCode !== undefined && { zipCode: dto.address.zipCode }),
-        ...(dto.address.coordinates !== undefined && {
+
+
+      // If coordinates are provided, call geocoding service to get address details
+        const geocodedAddress = await this.geocodingService.reverseGeocode(
+          dto.currentLocation.latitude,
+          dto.currentLocation.longitude
+        );
+        // Use geocoded data to fill missing address fields, with provided values taking priority
+        update.address = {
+          displayAddress: geocodedAddress.displayName || "",
+          street: dto.address?.street || geocodedAddress.street,
+          city: dto.address?.city || geocodedAddress.city,
+          state: dto.address?.state || geocodedAddress.state,
+          country: dto.address?.country || geocodedAddress.country,
+          zipCode: dto.address?.zipCode || geocodedAddress.zipCode,
           coordinates: [
-            dto.address.coordinates.longitude,
-            dto.address.coordinates.latitude,
+            dto.currentLocation.longitude,
+            dto.currentLocation.latitude,
           ] as [number, number],
-        }),
-      };
-    }
+        };
+        update.currentLocation = [
+          dto.currentLocation.longitude,
+          dto.currentLocation.latitude,
+        ] as [number, number];
+     
+    
 
     const updated = await this.userModel.findByIdAndUpdate(userId, update, { new: true }).exec();
     if (!updated) {

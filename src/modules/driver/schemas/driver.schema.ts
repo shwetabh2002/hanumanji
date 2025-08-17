@@ -124,9 +124,6 @@ export class Driver {
   @Prop({ type: String, enum: DriverStatus, default: DriverStatus.OFFLINE })
   status: DriverStatus;
 
-  @Prop({ default: true })
-  isActive: boolean;
-
   @Prop({ default: false })
   isVerified: boolean;
 
@@ -140,7 +137,7 @@ export class Driver {
   licenseNumber: string;
 
   @Prop()
-  licenseExpiry?: Date;
+  licenseExpiry: Date;
 
   @Prop()
   aadharNumber?: string;
@@ -152,31 +149,21 @@ export class Driver {
   vehicle?: DriverVehicle;
 
   @Prop({ type: DriverLocation })
-  currentLocation?: DriverLocation;
+  location?: DriverLocation;
 
-  @Prop({ type: DriverStats })
-  stats?: DriverStats;
-
-  @Prop({ type: [DriverPreferredArea] })
-  preferredAreas?: DriverPreferredArea[];
+  @Prop({
+    type: [Number],
+    required: true,
+    index: '2dsphere',
+  })
+  currentLocation: [number, number]; // [longitude, latitude]
 
   @Prop({ type: DriverBankDetails })
   bankDetails?: DriverBankDetails;
 
-  @Prop({ type: [String] })
-  fcmTokens?: string[];
-
   @Prop()
   lastLogin?: Date;
 
-  @Prop()
-  refreshToken?: string;
-
-  @Prop({ default: false })
-  isOnline: boolean;
-
-  @Prop()
-  currentBookingId?: string;
 }
 
 export const DriverSchema = SchemaFactory.createForClass(Driver);
@@ -186,8 +173,7 @@ DriverSchema.index({ phoneNumber: 1 });
 DriverSchema.index({ email: 1 });
 DriverSchema.index({ licenseNumber: 1 });
 DriverSchema.index({ 'vehicle.registrationNumber': 1 });
-DriverSchema.index({ 'currentLocation.coordinates': '2dsphere' });
 DriverSchema.index({ status: 1 });
-DriverSchema.index({ isActive: 1 });
-DriverSchema.index({ isOnline: 1 });
 DriverSchema.index({ 'vehicle.type': 1 }); 
+DriverSchema.index({ 'location.coordinates': '2dsphere' });
+DriverSchema.index({ 'currentLocation': '2dsphere' });

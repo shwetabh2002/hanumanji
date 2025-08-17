@@ -1,6 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 import { BookingStatus, VehicleType, PaymentMethod } from '../../../common/enums';
+import { CoordinatesDto } from '@app/common/dto/location.dto';
 
 export type BookingDocument = Booking & Document;
 
@@ -70,6 +71,12 @@ export class Booking {
   @Prop({ type: Types.ObjectId, ref: 'Driver' })
   driverId?: Types.ObjectId;
 
+  @Prop({ type: CoordinatesDto, required: true })
+  bookingLocation: CoordinatesDto;
+
+  @Prop({ type: CoordinatesDto, required: true })
+  bookingDestination: CoordinatesDto;
+
   @Prop({ type: String, enum: BookingStatus, default: BookingStatus.PENDING })
   status: BookingStatus;
 
@@ -92,67 +99,58 @@ export class Booking {
   estimatedFare: number;
 
   @Prop()
-  actualDistance?: number;
+  actualDistance: number;
 
   @Prop()
-  actualDuration?: number;
+  actualDuration: number;
 
   @Prop()
-  actualFare?: number;
+  actualFare: number;
 
   @Prop({ type: String, enum: PaymentMethod, default: PaymentMethod.CASH })
   paymentMethod: PaymentMethod;
 
   @Prop()
-  paymentId?: string;
+  paymentId: string;
 
   @Prop({ type: BookingFareBreakdown })
-  fareBreakdown?: BookingFareBreakdown;
+  fareBreakdown: BookingFareBreakdown;
 
   @Prop()
-  scheduledTime?: Date;
+  scheduledTime: Date;
 
   @Prop()
   requestedAt: Date;
 
   @Prop()
-  acceptedAt?: Date;
+  acceptedAt: Date;
 
   @Prop()
-  arrivedAt?: Date;
+  arrivedAt: Date;
 
   @Prop()
-  startedAt?: Date;
+  startedAt: Date;
 
   @Prop()
-  completedAt?: Date;
+  completedAt: Date;
 
   @Prop()
-  cancelledAt?: Date;
+  cancelledAt: Date;
 
   @Prop()
-  cancelledBy?: string; // 'user' | 'driver' | 'system'
+  cancelledBy: string; // 'user' | 'driver' | 'system'
 
   @Prop()
-  cancellationReason?: string;
+  cancellationReason: string;
+
+  @Prop({ type: [Types.ObjectId], default: [] })
+  rejectedDrivers: Types.ObjectId[];
 
   @Prop()
-  specialInstructions?: string;
-
-  @Prop({ type: BookingRating })
-  rating?: BookingRating;
-
-  @Prop({ type: [Types.ObjectId] })
-  rejectedDrivers?: Types.ObjectId[];
-
-  @Prop({ default: 0 })
-  requestCount: number;
+  promoCode: string;
 
   @Prop()
-  promoCode?: string;
-
-  @Prop()
-  otp?: string;
+  otp: string;
 }
 
 export const BookingSchema = SchemaFactory.createForClass(Booking);
