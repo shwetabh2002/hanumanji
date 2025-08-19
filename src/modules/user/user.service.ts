@@ -182,7 +182,7 @@ export class UserService implements IUserService {
     if (dto.profilePicture !== undefined) update.profilePicture = dto.profilePicture;
     if (dto.dateOfBirth !== undefined) update.dateOfBirth = new Date(dto.dateOfBirth);
 
-    // Handle currentLocation - auto-geocode to address
+    // Handle currentLocation - auto-geocode to address but no need as using google sdk on app side
     if (dto.currentLocation && dto.currentLocation.latitude && dto.currentLocation.longitude) {
       const geocodedAddress = await this.geocodingService.reverseGeocode(
         dto.currentLocation.latitude,
