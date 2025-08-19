@@ -182,31 +182,50 @@ export class UserService implements IUserService {
     if (dto.profilePicture !== undefined) update.profilePicture = dto.profilePicture;
     if (dto.dateOfBirth !== undefined) update.dateOfBirth = new Date(dto.dateOfBirth);
 
-
-      // If coordinates are provided, call geocoding service to get address details
-        const geocodedAddress = await this.geocodingService.reverseGeocode(
-          dto.currentLocation.latitude,
-          dto.currentLocation.longitude
-        );
-        // Use geocoded data to fill missing address fields, with provided values taking priority
-        update.address = {
-          displayAddress: geocodedAddress.displayName || "",
-          street: dto.address?.street || geocodedAddress.street,
-          city: dto.address?.city || geocodedAddress.city,
-          state: dto.address?.state || geocodedAddress.state,
-          country: dto.address?.country || geocodedAddress.country,
-          zipCode: dto.address?.zipCode || geocodedAddress.zipCode,
-          coordinates: [
-            dto.currentLocation.longitude,
-            dto.currentLocation.latitude,
-          ] as [number, number],
-        };
-        update.currentLocation = [
+    // Handle currentLocation - auto-geocode to address
+    if (dto.currentLocation && dto.currentLocation.latitude && dto.currentLocation.longitude) {
+      const geocodedAddress = await this.geocodingService.reverseGeocode(
+        dto.currentLocation.latitude,
+        dto.currentLocation.longitude
+      );
+      
+      // Use geocoded data to fill missing address fields, with provided values taking priority
+      update.address = {
+        displayAddress: geocodedAddress.displayName || "",
+        street: dto.address?.street || geocodedAddress.street,
+        city: dto.address?.city || geocodedAddress.city,
+        state: dto.address?.state || geocodedAddress.state,
+        country: dto.address?.country || geocodedAddress.country,
+        zipCode: dto.address?.zipCode || geocodedAddress.zipCode,
+        coordinates: [
           dto.currentLocation.longitude,
           dto.currentLocation.latitude,
-        ] as [number, number];
-     
-    
+        ] as [number, number],
+      };
+      
+      update.currentLocation = [
+        dto.currentLocation.longitude,
+        dto.currentLocation.latitude,
+      ] as [number, number];
+    }
+
+    // Handle manual address update (with or without coordinates)
+    if (dto.address) {
+      update.address = {
+        ...(dto.address.street !== undefined && { street: dto.address.street }),
+        ...(dto.address.city !== undefined && { city: dto.address.city }),
+        ...(dto.address.state !== undefined && { state: dto.address.state }),
+        ...(dto.address.country !== undefined && { country: dto.address.country }),
+        ...(dto.address.zipCode !== undefined && { zipCode: dto.address.zipCode }),
+        ...(dto.address.displayAddress !== undefined && { displayAddress: dto.address.displayAddress }),
+        ...(dto.address.coordinates !== undefined && {
+          coordinates: [
+            dto.address.coordinates.longitude,
+            dto.address.coordinates.latitude,
+          ] as [number, number],
+        }),
+      };
+    }
 
     const updated = await this.userModel.findByIdAndUpdate(userId, update, { new: true }).exec();
     if (!updated) {

@@ -34,6 +34,12 @@ export class UpdateUserAddressDto {
   @ValidateNested()
   @Type(() => CoordinatesDto)
   coordinates?: CoordinatesDto;
+
+
+  @ApiPropertyOptional({ description: 'Display address' })
+  @IsOptional()
+  @IsString()
+  displayAddress?: string;
 }
 
 export class UpdateUserDto {
