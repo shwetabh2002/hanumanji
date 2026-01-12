@@ -53,7 +53,7 @@ export default registerAs('app', () => {
       clientId: process.env.KAFKA_CLIENT_ID || 'rideit-app',
       brokers: process.env.KAFKA_BROKERS?.split(',') || ['localhost:29092'],
       groupId: process.env.KAFKA_GROUP_ID || 'rideit-consumer-group',
-      enabled: process.env.KAFKA_ENABLED !== 'false', // Can disable in dev
+      enabled: process.env.KAFKA_ENABLED === 'true', // Disabled by default in dev
     },
 
     // Rate Limiting

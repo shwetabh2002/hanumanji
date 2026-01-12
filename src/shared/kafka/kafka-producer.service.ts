@@ -1,7 +1,7 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Kafka, Producer, ProducerRecord, RecordMetadata, Partitioners } from 'kafkajs';
-import { createKafkaClient, KAFKA_TOPICS } from './kafka.config';
+import { createKafkaClient, isKafkaEnabled, KAFKA_TOPICS } from './kafka.config';
 import { randomUUID } from 'crypto';
 
 export interface KafkaMessage<T = any> {
@@ -18,32 +18,42 @@ export interface KafkaMessage<T = any> {
 @Injectable()
 export class KafkaProducerService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(KafkaProducerService.name);
-  private kafka: Kafka;
-  private producer: Producer;
+  private kafka: Kafka | null;
+  private producer: Producer | null = null;
   private isConnected = false;
+  private isEnabled = false;
 
   constructor(private readonly configService: ConfigService) {
+    this.isEnabled = isKafkaEnabled(configService);
     this.kafka = createKafkaClient(configService);
-    this.producer = this.kafka.producer({
-      allowAutoTopicCreation: true,
-      transactionTimeout: 30000,
-      createPartitioner: Partitioners.DefaultPartitioner, // Suppress v2.0 warning
-    });
+    
+    if (this.kafka) {
+      this.producer = this.kafka.producer({
+        allowAutoTopicCreation: true,
+        transactionTimeout: 30000,
+        createPartitioner: Partitioners.DefaultPartitioner,
+      });
+    }
   }
 
   async onModuleInit() {
+    if (!this.isEnabled || !this.producer) {
+      this.logger.log('ℹ️ Kafka disabled - producer not started');
+      return;
+    }
+
     try {
       await this.producer.connect();
       this.isConnected = true;
       this.logger.log('✅ Kafka producer connected');
     } catch (error) {
       this.logger.error('❌ Failed to connect Kafka producer:', error.message);
-      // Don't throw - allow app to start without Kafka in dev
+      // Don't throw - allow app to start without Kafka
     }
   }
 
   async onModuleDestroy() {
-    if (this.isConnected) {
+    if (this.isConnected && this.producer) {
       await this.producer.disconnect();
       this.logger.log('Kafka producer disconnected');
     }

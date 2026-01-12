@@ -1,7 +1,15 @@
 import { Kafka, logLevel } from 'kafkajs';
 import { ConfigService } from '@nestjs/config';
 
-export const createKafkaClient = (configService: ConfigService): Kafka => {
+export const isKafkaEnabled = (configService: ConfigService): boolean => {
+  return configService.get<boolean>('app.kafka.enabled', true);
+};
+
+export const createKafkaClient = (configService: ConfigService): Kafka | null => {
+  if (!isKafkaEnabled(configService)) {
+    return null;
+  }
+
   // Use port 29092 for host-to-container communication
   const brokers = configService.get<string[]>('app.kafka.brokers') || ['localhost:29092'];
   const clientId = configService.get<string>('app.kafka.clientId') || 'rideit-app';
@@ -11,8 +19,8 @@ export const createKafkaClient = (configService: ConfigService): Kafka => {
     brokers,
     logLevel: logLevel.WARN,
     retry: {
-      initialRetryTime: 100,
-      retries: 8,
+      initialRetryTime: 300,
+      retries: 3, // Fail fast if Kafka is unavailable
     },
   });
 };

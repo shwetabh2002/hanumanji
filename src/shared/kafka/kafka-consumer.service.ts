@@ -1,7 +1,7 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Kafka, Consumer, EachMessagePayload, KafkaMessage as KafkaJSMessage } from 'kafkajs';
-import { createKafkaClient, KAFKA_TOPICS, CONSUMER_GROUPS } from './kafka.config';
+import { createKafkaClient, isKafkaEnabled, KAFKA_TOPICS, CONSUMER_GROUPS } from './kafka.config';
 import { KafkaMessage, KafkaProducerService } from './kafka-producer.service';
 
 export type MessageHandler<T = any> = (
@@ -19,20 +19,25 @@ interface TopicSubscription {
 @Injectable()
 export class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(KafkaConsumerService.name);
-  private kafka: Kafka;
+  private kafka: Kafka | null;
   private consumers: Map<string, Consumer> = new Map();
   private subscriptions: TopicSubscription[] = [];
   private isConnected = false;
+  private isEnabled = false;
 
   constructor(
     private readonly configService: ConfigService,
     private readonly producer: KafkaProducerService,
   ) {
+    this.isEnabled = isKafkaEnabled(configService);
     this.kafka = createKafkaClient(configService);
   }
 
   async onModuleInit() {
-    // Consumers are started when subscriptions are registered
+    if (!this.isEnabled) {
+      this.logger.log('ℹ️ Kafka disabled - consumer not started');
+      return;
+    }
     this.logger.log('Kafka consumer service initialized');
   }
 
@@ -51,6 +56,11 @@ export class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
     groupId: string,
     handler: MessageHandler,
   ): Promise<void> {
+    if (!this.isEnabled || !this.kafka) {
+      this.logger.debug(`Kafka disabled - skipping subscription to ${topic}`);
+      return;
+    }
+
     // Check if consumer for this group already exists
     let consumer = this.consumers.get(groupId);
 

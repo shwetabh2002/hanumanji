@@ -229,25 +229,71 @@ export class DriverLocationService {
    * Mark driver as online (available for rides)
    */
   async markOnline(driverId: string, vehicleType: string): Promise<void> {
-    await this.redis.sadd(RedisKeys.ONLINE_DRIVERS, driverId);
-    await this.redis.sadd(RedisKeys.availableDrivers(vehicleType), driverId);
-    
-    this.logger.log(`Driver ${driverId} marked online with vehicle type ${vehicleType}`);
+    try {
+      this.logger.debug(`Marking driver ${driverId} online with vehicle type ${vehicleType}`);
+
+      // Add to ONLINE_DRIVERS set
+      this.logger.debug(`Adding to ${RedisKeys.ONLINE_DRIVERS} set...`);
+      await this.redis.sadd(RedisKeys.ONLINE_DRIVERS, driverId);
+      this.logger.debug(`Successfully added to ${RedisKeys.ONLINE_DRIVERS}`);
+
+      // Add to vehicle-specific available drivers set
+      const vehicleKey = RedisKeys.availableDrivers(vehicleType);
+      this.logger.debug(`Adding to ${vehicleKey} set...`);
+      await this.redis.sadd(vehicleKey, driverId);
+      this.logger.debug(`Successfully added to ${vehicleKey}`);
+
+      // Verify the driver was added
+      const isInOnlineSet = await this.redis.sismember(RedisKeys.ONLINE_DRIVERS, driverId);
+      const isInVehicleSet = await this.redis.sismember(vehicleKey, driverId);
+
+      this.logger.log(`Driver ${driverId} marked online with vehicle type ${vehicleType} - Verified: online=${isInOnlineSet}, vehicle=${isInVehicleSet}`);
+
+      if (!isInOnlineSet || !isInVehicleSet) {
+        this.logger.error(`⚠️ Redis verification failed! Driver ${driverId} not found in sets after SADD`);
+      }
+    } catch (error) {
+      this.logger.error(`❌ Failed to mark driver ${driverId} online in Redis:`, error);
+      throw error;
+    }
   }
 
   /**
    * Mark driver as offline
    */
   async markOffline(driverId: string, vehicleType?: string): Promise<void> {
-    await this.redis.srem(RedisKeys.ONLINE_DRIVERS, driverId);
-    
-    if (vehicleType) {
-      await this.redis.srem(RedisKeys.availableDrivers(vehicleType), driverId);
+    try {
+      this.logger.debug(`Marking driver ${driverId} offline (vehicleType: ${vehicleType})`);
+
+      // Remove from ONLINE_DRIVERS set
+      this.logger.debug(`Removing from ${RedisKeys.ONLINE_DRIVERS} set...`);
+      await this.redis.srem(RedisKeys.ONLINE_DRIVERS, driverId);
+      this.logger.debug(`Successfully removed from ${RedisKeys.ONLINE_DRIVERS}`);
+
+      if (vehicleType) {
+        const vehicleKey = RedisKeys.availableDrivers(vehicleType);
+        this.logger.debug(`Removing from ${vehicleKey} set...`);
+        await this.redis.srem(vehicleKey, driverId);
+        this.logger.debug(`Successfully removed from ${vehicleKey}`);
+      }
+
+      // Remove location data
+      this.logger.debug(`Removing location data for driver ${driverId}...`);
+      await this.removeLocation(driverId);
+      this.logger.debug(`Location data removed for driver ${driverId}`);
+
+      // Verify the driver was removed
+      const isStillOnline = await this.redis.sismember(RedisKeys.ONLINE_DRIVERS, driverId);
+
+      this.logger.log(`Driver ${driverId} marked offline - Verified: stillOnline=${isStillOnline}`);
+
+      if (isStillOnline) {
+        this.logger.error(`⚠️ Redis verification failed! Driver ${driverId} still in ONLINE_DRIVERS after SREM`);
+      }
+    } catch (error) {
+      this.logger.error(`❌ Failed to mark driver ${driverId} offline in Redis:`, error);
+      throw error;
     }
-    
-    await this.removeLocation(driverId);
-    
-    this.logger.log(`Driver ${driverId} marked offline`);
   }
 
   /**
