@@ -1,11 +1,13 @@
 import { Body, Controller, HttpCode, HttpStatus, Post, UseGuards, Get, Req, UnauthorizedException } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+
 import { AuthService } from './auth.service';
-import { VerifyOtpDto } from '../user/dto/register-user.dto';
-import { UserService } from '../user/user.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { JwtRefreshGuard } from './guards/jwt-refresh.guard';
 import { RefreshTokenResponseDto } from './dto/refresh-token.dto';
+import { RegisterUserDto, VerifyOtpDto, ResendOtpDto } from '../user/dto/register-user.dto';
+import { RegisterResponseDto, VerifyOtpResponseDto, ResendOtpResponseDto } from '../user/dto/user-response.dto';
+import { UserService } from '../user/user.service';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -21,9 +23,7 @@ export class AuthController {
   @ApiBody({ type: VerifyOtpDto })
   @ApiResponse({ status: 200, description: 'Login successful' })
   async loginWithOtp(@Body() dto: VerifyOtpDto) {
-    // First verify OTP using user service; it will clear OTP
-    const result = await this.userService.verifyOtp(dto);
-    // Build tokens for the verified user
+    const result = await this.authService.verifyOtp(dto);
     const user = await this.userService.findUserByPhoneNumber(result.user.phoneNumber);
     return this.authService.buildAuthResponse(user!);
   }
@@ -31,11 +31,10 @@ export class AuthController {
   @Post('refresh')
   @ApiBearerAuth('JWT-auth')
   @UseGuards(JwtRefreshGuard)
-  // @HttpCode(HttpStatus.OK)
-  // @ApiOperation({ summary: 'Refresh access token using refresh token' })
-  // @ApiResponse({ status: 200, description: 'Tokens refreshed successfully', type: RefreshTokenResponseDto })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Refresh access token using refresh token' })
+  @ApiResponse({ status: 200, description: 'Tokens refreshed successfully', type: RefreshTokenResponseDto })
   async refresh(@Req() req: any) {
-    console.log('refresh endpoint reached, user:', req.user);
     const userId = req.user.sub;
     const user = await this.userService.findUserById(userId);
     
@@ -54,4 +53,16 @@ export class AuthController {
   async me(@Req() req: any) {
     return req.user;
   }
-} 
+
+  @Post('logout')
+  @ApiBearerAuth('JWT-auth')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Logout user' })
+  @ApiResponse({ status: 200, description: 'Logged out successfully' })
+  async logout() {
+    return {
+      message: 'Logged out successfully',
+    };
+  }
+}

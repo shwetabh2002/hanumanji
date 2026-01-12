@@ -109,23 +109,32 @@ export class Driver {
   @Prop({ required: true, unique: true })
   phoneNumber: string;
 
+  @Prop({ default: '+91' })
+  countryCode: string;
+
+  @Prop({ type: String, enum: ['en', 'hi'], default: 'en' })
+  language: 'en' | 'hi';
+
   @Prop({ required: true })
   firstName: string;
 
   @Prop({ required: true })
   lastName: string;
 
-  @Prop({ required: true, unique: true })
-  email: string;
+  @Prop({ unique: true, sparse: true }) // sparse: allows null but ensures unique when present
+  email?: string;
 
-  @Prop({ required: true })
-  password: string;
+  @Prop()
+  password?: string;
 
   @Prop({ type: String, enum: DriverStatus, default: DriverStatus.OFFLINE })
   status: DriverStatus;
 
   @Prop({ default: false })
-  isVerified: boolean;
+  isPhoneVerified: boolean;
+
+  @Prop({ default: false })
+  isVerified: boolean; // Full verification (documents, etc.)
 
   @Prop()
   profilePicture?: string;
@@ -133,11 +142,11 @@ export class Driver {
   @Prop()
   dateOfBirth?: Date;
 
-  @Prop({ required: true, unique: true })
-  licenseNumber: string;
+  @Prop({ unique: true, sparse: true }) // sparse: allows null but ensures unique when present
+  licenseNumber?: string;
 
   @Prop()
-  licenseExpiry: Date;
+  licenseExpiry?: Date;
 
   @Prop()
   aadharNumber?: string;
@@ -153,10 +162,10 @@ export class Driver {
 
   @Prop({
     type: [Number],
-    required: true,
     index: '2dsphere',
+    default: [0, 0], // Default until driver shares location
   })
-  currentLocation: [number, number]; // [longitude, latitude]
+  currentLocation?: [number, number]; // [longitude, latitude]
 
   @Prop({ type: DriverBankDetails })
   bankDetails?: DriverBankDetails;
@@ -164,16 +173,24 @@ export class Driver {
   @Prop()
   lastLogin?: Date;
 
+  // OTP fields (for phone-based auth)
+  @Prop()
+  otp?: string;
+
+  @Prop()
+  otpExpiry?: Date;
+
+  @Prop()
+  refreshToken?: string;
 }
 
 export const DriverSchema = SchemaFactory.createForClass(Driver);
 
-// Indexes
-DriverSchema.index({ phoneNumber: 1 });
-DriverSchema.index({ email: 1 });
-DriverSchema.index({ licenseNumber: 1 });
-DriverSchema.index({ 'vehicle.registrationNumber': 1 });
+// Indexes (avoid duplicates - unique/index in @Prop creates its own)
+// phoneNumber, email, licenseNumber: already indexed via unique: true
+// vehicle.registrationNumber: already indexed via unique: true in DriverVehicle
+// location.coordinates: already indexed via index: '2dsphere' in DriverLocation
+// currentLocation: already indexed via index: '2dsphere' in @Prop
 DriverSchema.index({ status: 1 });
-DriverSchema.index({ 'vehicle.type': 1 }); 
-DriverSchema.index({ 'location.coordinates': '2dsphere' });
-DriverSchema.index({ 'currentLocation': '2dsphere' });
+DriverSchema.index({ 'vehicle.type': 1 });
+DriverSchema.index({ createdAt: -1 });

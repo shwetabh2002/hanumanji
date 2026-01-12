@@ -155,13 +155,17 @@ export class Booking {
 
 export const BookingSchema = SchemaFactory.createForClass(Booking);
 
-// Indexes
+// Indexes (avoid duplicates - index in @Prop creates its own)
+// pickupLocation.coordinates: already indexed via index: '2dsphere' in BookingLocation
+// dropLocation.coordinates: already indexed via index: '2dsphere' in BookingLocation
 BookingSchema.index({ userId: 1 });
 BookingSchema.index({ driverId: 1 });
 BookingSchema.index({ status: 1 });
 BookingSchema.index({ vehicleType: 1 });
-BookingSchema.index({ 'pickupLocation.coordinates': '2dsphere' });
-BookingSchema.index({ 'dropLocation.coordinates': '2dsphere' });
 BookingSchema.index({ requestedAt: -1 });
 BookingSchema.index({ completedAt: -1 });
-BookingSchema.index({ createdAt: -1 }); 
+BookingSchema.index({ createdAt: -1 });
+
+// Compound indexes for common queries
+BookingSchema.index({ userId: 1, status: 1 });
+BookingSchema.index({ driverId: 1, status: 1 }); 

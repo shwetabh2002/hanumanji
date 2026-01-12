@@ -68,7 +68,10 @@ export class RegisterResponseDto {
   @ApiProperty({ description: 'Success message', example: 'OTP sent successfully' })
   message: string;
 
-  @ApiProperty({ description: 'Phone number', example: '+919876543210' })
+  @ApiProperty({ description: 'Country code with + prefix', example: '+91' })
+  countryCode: string;
+
+  @ApiProperty({ description: 'Phone number without country code', example: '9876543210' })
   phoneNumber: string;
 
   @ApiProperty({ description: 'User ID' })
@@ -93,13 +96,22 @@ export class VerifyOtpResponseDto {
 
   @ApiProperty({ description: 'User details', type: UserResponseDto })
   user: UserResponseDto;
+
+  @ApiProperty({ description: 'Access token', required: false })
+  accessToken?: string;
+
+  @ApiProperty({ description: 'Refresh token', required: false })
+  refreshToken?: string;
 }
 
 export class ResendOtpResponseDto {
   @ApiProperty({ description: 'Success message', example: 'OTP resent successfully' })
   message: string;
 
-  @ApiProperty({ description: 'Phone number', example: '+919876543210' })
+  @ApiProperty({ description: 'Country code with + prefix', example: '+91' })
+  countryCode: string;
+
+  @ApiProperty({ description: 'Phone number without country code', example: '9876543210' })
   phoneNumber: string;
 
   @ApiProperty({ description: 'OTP expiry time' })

@@ -1,6 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
-import { UserRole } from '../../../common/enums';
+import { UserRole, UserType, DriverStatus, VehicleType } from '../../../common/enums';
 
 export type UserDocument = User & Document;
 
@@ -56,8 +56,90 @@ export class UserStats {
   @Prop({ type: Number, default: 0 })
   totalRides: number;
 
+  // User-specific stats
   @Prop({ type: Number, default: 0 })
-  totalSpent: number;
+  totalSpent?: number;
+
+  // Driver-specific stats
+  @Prop({ type: Number, default: 0 })
+  totalEarnings?: number;
+
+  @Prop({ type: Number, default: 100 })
+  completionRate?: number;
+
+  @Prop({ type: Number, default: 0 })
+  cancellationRate?: number;
+}
+
+// Driver-specific nested schemas
+@Schema({ _id: false })
+export class UserVehicle {
+  @Prop({ type: String, enum: VehicleType, required: true })
+  type: VehicleType;
+
+  @Prop({ required: true })
+  make: string;
+
+  @Prop({ required: true })
+  model: string;
+
+  @Prop({ required: true })
+  year: number;
+
+  @Prop({ required: true })
+  color: string;
+
+  @Prop({ required: true })
+  registrationNumber: string;
+
+  @Prop()
+  insuranceNumber?: string;
+
+  @Prop()
+  insuranceExpiry?: Date;
+
+  @Prop()
+  rcNumber?: string;
+}
+
+@Schema({ _id: false })
+export class UserLocation {
+  @Prop({
+    type: [Number],
+    required: true,
+    index: '2dsphere',
+  })
+  coordinates: [number, number]; // [longitude, latitude]
+
+  @Prop()
+  address?: string;
+
+  @Prop({ type: Number })
+  heading?: number; // Direction in degrees
+
+  @Prop({ type: Number })
+  speed?: number; // Speed in km/h
+
+  @Prop({ type: Number })
+  accuracy?: number;
+
+  @Prop({ type: Date, default: Date.now })
+  lastUpdated: Date;
+}
+
+@Schema({ _id: false })
+export class UserBankDetails {
+  @Prop()
+  accountNumber?: string;
+
+  @Prop()
+  ifscCode?: string;
+
+  @Prop()
+  bankName?: string;
+
+  @Prop()
+  holderName?: string;
 }
 
 @Schema({
@@ -86,6 +168,9 @@ export class User {
   @Prop({ type: String, enum: UserRole, default: UserRole.USER })
   role: UserRole;
 
+  @Prop({ type: String, enum: UserType, default: UserType.USER, index: true })
+  type: UserType;
+
   @Prop({ default: true })
   isActive: boolean;
 
@@ -97,6 +182,34 @@ export class User {
 
   @Prop()
   dateOfBirth?: Date;
+
+  // Driver-specific fields
+  @Prop({ type: String, enum: DriverStatus, index: true })
+  status?: DriverStatus;
+
+  @Prop({ type: String, enum: ['en', 'hi'] })
+  language?: 'en' | 'hi';
+
+  @Prop({ unique: true, sparse: true })
+  licenseNumber?: string;
+
+  @Prop()
+  licenseExpiry?: Date;
+
+  @Prop()
+  aadharNumber?: string;
+
+  @Prop()
+  panNumber?: string;
+
+  @Prop({ type: UserVehicle })
+  vehicle?: UserVehicle;
+
+  @Prop({ type: UserLocation })
+  location?: UserLocation;
+
+  @Prop({ type: UserBankDetails })
+  bankDetails?: UserBankDetails;
 
   @Prop({ type: UserAddress })
   address?: UserAddress;
@@ -128,17 +241,28 @@ export class User {
 
   @Prop({
     type: [Number],
-    required: true,
     index: '2dsphere',
+    default: [0, 0], // Default to null island, updated when user shares location
   })
   currentLocation: [number, number]; // [longitude, latitude]
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
 
-// Indexes
-UserSchema.index({ phoneNumber: 1 });
-UserSchema.index({ email: 1 });
-UserSchema.index({ 'address.coordinates': '2dsphere' });
+// Indexes (only non-duplicate ones - unique/index in @Prop creates its own index)
+// phoneNumber: already indexed via unique: true
+// type: already indexed via index: true in @Prop
+// status: already indexed via index: true in @Prop
+// address.coordinates: already indexed via index: '2dsphere' in UserAddress
+// location.coordinates: already indexed via index: '2dsphere' in UserLocation
+UserSchema.index({ email: 1 }, { sparse: true }); // sparse for optional field
 UserSchema.index({ role: 1 });
 UserSchema.index({ isActive: 1 });
+UserSchema.index({ createdAt: -1 });
+// Driver-specific indexes
+UserSchema.index({ 'vehicle.registrationNumber': 1 }, { sparse: true, unique: true });
+UserSchema.index({ 'vehicle.type': 1 });
+// Compound indexes for efficient queries
+UserSchema.index({ type: 1, status: 1 }); // Find available drivers
+UserSchema.index({ type: 1, isActive: 1 });
+UserSchema.index({ type: 1, createdAt: -1 });

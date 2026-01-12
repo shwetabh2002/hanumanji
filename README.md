@@ -68,7 +68,7 @@ src/
 
 ```bash
 git clone <repository-url>
-cd rapido-clone-backend
+cd rideit-clone-backend
 ```
 
 ### 2. Install Dependencies
@@ -103,12 +103,12 @@ REDIS_HOST=localhost
 REDIS_PORT=6379
 REDIS_PASSWORD=
 REDIS_DB=0
-REDIS_KEY_PREFIX=rapido:
+REDIS_KEY_PREFIX=rideit:
 
 # Kafka Configuration
-KAFKA_CLIENT_ID=rapido-app
+KAFKA_CLIENT_ID=rideit-app
 KAFKA_BROKERS=localhost:9092
-KAFKA_GROUP_ID=rapido-consumer-group
+KAFKA_GROUP_ID=rideit-consumer-group
 
 # Rate Limiting
 THROTTLE_TTL=60
@@ -232,7 +232,7 @@ Redis is used for:
 npm run build
 
 # Build Docker image
-docker build -t rapido-clone-backend .
+docker build -t rideit-clone-backend .
 
 # Run with Docker Compose
 docker-compose up --build

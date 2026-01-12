@@ -17,12 +17,13 @@ export class LoggingInterceptor implements NestInterceptor {
     const response = context.switchToHttp().getResponse();
     const { method, url, headers, body } = request;
     const userAgent = headers['user-agent'] || '';
+    const requestId = headers['x-request-id'] || 'no-id';
     const startTime = Date.now();
 
     // Log incoming request
     const bodySize = body ? JSON.stringify(body).length : 0;
     this.logger.log(
-      `➡️  ${method} ${url} - ${userAgent.substring(0, 50)}${userAgent.length > 50 ? '...' : ''} - Body: ${bodySize}B`
+      `➡️  [${requestId.substring(0, 8)}] ${method} ${url} - Body: ${bodySize}B`
     );
 
     return next.handle().pipe(
@@ -32,8 +33,13 @@ export class LoggingInterceptor implements NestInterceptor {
         const statusEmoji = this.getStatusEmoji(statusCode);
         
         this.logger.log(
-          `⬅️  ${method} ${url} ${statusEmoji} ${statusCode} - ${duration}ms`
+          `⬅️  [${requestId.substring(0, 8)}] ${method} ${url} ${statusEmoji} ${statusCode} - ${duration}ms`
         );
+        
+        // Warn on slow requests
+        if (duration > 1000) {
+          this.logger.warn(`🐢 Slow request: ${method} ${url} took ${duration}ms`);
+        }
       }),
     );
   }

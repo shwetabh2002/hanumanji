@@ -4,13 +4,27 @@ import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class JwtAuthMiddleware implements NestMiddleware {
-  // Only allow registration without auth; everything else requires Authorization
+  // Public paths that don't require authentication
   private readonly publicPaths: RegExp[] = [
+    // User auth
     /^\/users\/register$/,
-    /^\/auth\/refresh$/,
     /^\/users\/verify-otp$/,
     /^\/users\/resend-otp$/,
+    /^\/auth\/refresh$/,
     /^\/auth\/login-otp$/,
+    
+    // Driver auth
+    /^\/driver\/auth\/register$/,
+    /^\/driver\/auth\/verify-otp$/,
+    /^\/driver\/auth\/resend-otp$/,
+    
+    // Public endpoints
+    /^\/bookings\/estimate\/fare/,
+    /^\/drivers\/nearby/,
+    /^\/drivers\/online-count$/,
+    /^\/health$/,
+    /^\/api\/docs/,
+    /^\/$/,
   ];
 
   constructor(

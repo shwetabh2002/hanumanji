@@ -1,178 +1,142 @@
-import { Injectable, BadRequestException, NotFoundException, Logger, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { plainToClass } from 'class-transformer';
 import * as bcrypt from 'bcryptjs';
 
 import { User, UserDocument } from './schemas/user.schema';
-import { RegisterUserDto, VerifyOtpDto, ResendOtpDto } from './dto/register-user.dto';
-import { RegisterResponseDto, VerifyOtpResponseDto, ResendOtpResponseDto, UserResponseDto } from './dto/user-response.dto';
-import { IUserService } from './interfaces/user-service.interface';
-import { OtpService } from './services/otp.service';
-import { UserRole } from '../../common/enums';
-import { AuthService } from '../auth/auth.service';
 import { UpdateUserDto } from './dto/update-user.dto';
-import { GeocodingService } from './services/geocoding.service';
+import { UserRole, UserType, DriverStatus } from '../../common/enums';
+import { GeocodingService } from '../../shared/http/geocoding.service';
 
 @Injectable()
-export class UserService implements IUserService {
+export class UserService {
   private readonly logger = new Logger(UserService.name);
 
   constructor(
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
-    private readonly otpService: OtpService,
-    private readonly authService: AuthService,
     private readonly geocodingService: GeocodingService,
   ) {}
 
-  async registerUser(registerUserDto: RegisterUserDto): Promise<RegisterResponseDto> {
-    try {
-      const { phoneNumber, firstName, lastName } = registerUserDto;
+  // ============ Query Methods ============
 
-      this.logger.log(`Registration attempt for phone: ${phoneNumber}`);
-      const countryCode = phoneNumber.substring(0, 3);
-      const phoneNumberWithoutCountryCode = this.phoneNumberWithoutCountryCode(phoneNumber);
-      
-      // Check if user already exists
-      const existingUser = await this.findUserByPhoneNumber( phoneNumberWithoutCountryCode);
-      
-      // Generate OTP for all cases (new user, unverified user, verified user trying to login)
-      const otp = this.otpService.generateOtp();
-      const otpExpiry = this.otpService.getOtpExpiryDate();
-
-      let user: UserDocument;
-      let isLogin = false;
-
-      if (existingUser) {
-        if (existingUser.isPhoneVerified) {
-          // Verified user trying to register again - treat as login
-          this.logger.log(`Verified user attempting login: ${phoneNumber}`);
-          user = await this.updateUserOtpForLogin({phoneNumber:this.phoneNumberWithoutCountryCode(phoneNumber), otp, otpExpiry});
-          isLogin = true;
-        } else {
-          // Unverified user - update with new details and OTP
-          this.logger.log(`Updating unverified user: ${phoneNumber}`);
-          user = await this.updateExistingUser(existingUser, { firstName, lastName, otp, otpExpiry });
-        }
-      } else {
-        // Create new user
-        user = await this.createNewUser({ phoneNumber: phoneNumberWithoutCountryCode, firstName, lastName, otp, otpExpiry, countryCode });
-        this.logger.log(`Created new user: ${phoneNumber}`);
-      }
-
-      // Send OTP (in production, this should be async)
-      const otpSent = await this.otpService.sendOtp(phoneNumber, otp);
-      if (!otpSent) {
-        this.logger.error(`Failed to send OTP to ${phoneNumber}`);
-        throw new InternalServerErrorException('Failed to send OTP');
-      }
-
-      return this.buildRegisterResponse(user, otp, otpExpiry, isLogin);
-
-    } catch (error) {
-      if (error instanceof BadRequestException) {
-        throw error;
-      }
-      
-      this.logger.error(`Registration failed for ${registerUserDto.phoneNumber}:`, error);
-      throw new InternalServerErrorException('Registration failed');
-    }
-  }
-
-  async verifyOtp(verifyOtpDto: VerifyOtpDto): Promise<VerifyOtpResponseDto> {
-    try {
-      const { phoneNumber, otp } = verifyOtpDto;
-
-      this.logger.log(`OTP verification attempt for phone: ${phoneNumber}`);
-
-      const user = await this.findUserByPhoneNumber(phoneNumber);
-      if (!user) {
-        this.logger.warn(`OTP verification failed: User not found - ${phoneNumber}`);
-        throw new NotFoundException('User not found');
-      }
-
-      // Validate OTP
-      this.validateOtpForUser(user, otp);
-
-      // Determine if this is a login or registration verification
-      const isLogin = user.isPhoneVerified;
-      
-      // Update user based on scenario
-      const verifiedUser = isLogin 
-        ? await this.clearOtpForLogin(phoneNumber)
-        : await this.markUserAsVerified(phoneNumber);
-      
-      const successMessage = isLogin 
-        ? 'Login successful' 
-        : 'Phone number verified successfully';
-      
-      this.logger.log(`${successMessage}: ${phoneNumber}`);
-
-      return this.buildVerifyResponse(verifiedUser, successMessage);
-
-    } catch (error) {
-      if (error instanceof NotFoundException || error instanceof BadRequestException) {
-        throw error;
-      }
-      
-      this.logger.error(`OTP verification failed for ${verifyOtpDto.phoneNumber}:`, error);
-      throw new InternalServerErrorException('OTP verification failed');
-    }
-  }
-
-  async resendOtp(resendOtpDto: ResendOtpDto): Promise<ResendOtpResponseDto> {
-    try {
-      const { phoneNumber } = resendOtpDto;
-
-      this.logger.log(`OTP resend request for phone: ${phoneNumber}`);
-
-      const user = await this.findUserByPhoneNumber(this.phoneNumberWithoutCountryCode(phoneNumber));
-      if (!user) {
-        this.logger.warn(`OTP resend failed: User not found - ${phoneNumber}`);
-        throw new NotFoundException('User not found');
-      }
-
-      if (user.isPhoneVerified) {
-        this.logger.warn(`OTP resend failed: Phone already verified - ${phoneNumber}`);
-        throw new BadRequestException('Phone number is already verified');
-      }
-
-      // Generate new OTP
-      const otp = this.otpService.generateOtp();
-      const otpExpiry = this.otpService.getOtpExpiryDate();
-
-      await this.updateUserOtp(this.phoneNumberWithoutCountryCode(phoneNumber), otp, otpExpiry);
-
-      // Send OTP
-      const otpSent = await this.otpService.sendOtp(phoneNumber, otp);
-      if (!otpSent) {
-        this.logger.error(`Failed to resend OTP to ${phoneNumber}`);
-        throw new InternalServerErrorException('Failed to send OTP');
-      }
-
-      this.logger.log(`OTP resent successfully: ${phoneNumber}`);
-
-      return this.buildResendResponse(phoneNumber, otp, otpExpiry);
-
-    } catch (error) {
-      if (error instanceof NotFoundException || error instanceof BadRequestException) {
-        throw error;
-      }
-      
-      this.logger.error(`OTP resend failed for ${resendOtpDto.phoneNumber}:`, error);
-      throw new InternalServerErrorException('OTP resend failed');
-    }
-  }
-
-  async findUserByPhoneNumber( phoneNumber: string): Promise<UserDocument | null> {
-    return this.userModel.findOne({  phoneNumber }).exec();
+  async findUserByPhoneNumber(phoneNumber: string): Promise<UserDocument | null> {
+    return this.userModel.findOne({ phoneNumber }).exec();
   }
 
   async findUserById(userId: string): Promise<UserDocument | null> {
     return this.userModel.findById(userId).exec();
   }
 
-  // Public method to update generic user fields
+  // ============ User Creation & Update ============
+
+  async createNewUser(userData: {
+    phoneNumber: string;
+    firstName?: string;
+    lastName?: string;
+    type?: UserType;
+    language?: 'en' | 'hi';
+    otp: string;
+    otpExpiry: Date;
+    countryCode: string;
+  }): Promise<UserDocument> {
+    const existingUser = await this.findUserByPhoneNumber(userData.phoneNumber);
+    if (existingUser) {
+      return existingUser;
+    }
+
+    const tempPassword = await bcrypt.hash('temp123', 10);
+
+    const userType = userData.type || UserType.USER;
+    const isDriver = userType === UserType.DRIVER;
+
+    const user = new this.userModel({
+      phoneNumber: userData.phoneNumber,
+      firstName: userData.firstName || '',
+      lastName: userData.lastName || '',
+      email: `${userData.phoneNumber.replace('+', '')}@temp.com`,
+      password: tempPassword,
+      role: UserRole.USER,
+      type: userType,
+      otp: userData.otp,
+      otpExpiry: userData.otpExpiry,
+      isPhoneVerified: false,
+      isVerified: false,
+      countryCode: userData.countryCode,
+      // Driver-specific fields
+      ...(isDriver && {
+        status: DriverStatus.OFFLINE,
+        language: userData.language || 'en',
+      }),
+    });
+
+    return user.save();
+  }
+
+  async updateExistingUser(
+    user: UserDocument,
+    updateData: {
+      firstName?: string;
+      lastName?: string;
+      type?: UserType;
+      language?: 'en' | 'hi';
+      otp: string;
+      otpExpiry: Date;
+    }
+  ): Promise<UserDocument> {
+    const updateFields: any = {
+      otp: updateData.otp,
+      otpExpiry: updateData.otpExpiry,
+      firstName: updateData.firstName || user.firstName,
+      lastName: updateData.lastName || user.lastName,
+    };
+
+    // Update type if provided
+    if (updateData.type) {
+      updateFields.type = updateData.type;
+    }
+
+    // Update language if provided (for drivers)
+    if (updateData.language) {
+      updateFields.language = updateData.language;
+    }
+
+    return this.userModel.findOneAndUpdate(
+      { phoneNumber: user.phoneNumber },
+      updateFields,
+      { new: true }
+    ).exec();
+  }
+
+  async updateUserOtp(phoneNumber: string, otp: string, otpExpiry: Date): Promise<UserDocument> {
+    return this.userModel.findOneAndUpdate(
+      { phoneNumber },
+      { otp, otpExpiry },
+      { new: true }
+    ).exec();
+  }
+
+  async markUserAsVerified(phoneNumber: string): Promise<UserDocument> {
+    return this.userModel.findOneAndUpdate(
+      { phoneNumber },
+      {
+        isPhoneVerified: true,
+        isVerified: true,
+        $unset: { otp: 1, otpExpiry: 1 },
+      },
+      { new: true }
+    ).exec();
+  }
+
+  async clearOtp(phoneNumber: string): Promise<UserDocument> {
+    return this.userModel.findOneAndUpdate(
+      { phoneNumber },
+      { $unset: { otp: 1, otpExpiry: 1 } },
+      { new: true }
+    ).exec();
+  }
+
+  // ============ Profile Update ============
+
   async updateUser(userId: string, dto: UpdateUserDto): Promise<UserDocument> {
     const update: any = {};
 
@@ -182,16 +146,15 @@ export class UserService implements IUserService {
     if (dto.profilePicture !== undefined) update.profilePicture = dto.profilePicture;
     if (dto.dateOfBirth !== undefined) update.dateOfBirth = new Date(dto.dateOfBirth);
 
-    // Handle currentLocation - auto-geocode to address but no need as using google sdk on app side
+    // Handle currentLocation - auto-geocode to address
     if (dto.currentLocation && dto.currentLocation.latitude && dto.currentLocation.longitude) {
       const geocodedAddress = await this.geocodingService.reverseGeocode(
         dto.currentLocation.latitude,
         dto.currentLocation.longitude
       );
       
-      // Use geocoded data to fill missing address fields, with provided values taking priority
       update.address = {
-        displayAddress: geocodedAddress.displayName || "",
+        displayAddress: geocodedAddress.displayName || '',
         street: dto.address?.street || geocodedAddress.street,
         city: dto.address?.city || geocodedAddress.city,
         state: dto.address?.state || geocodedAddress.state,
@@ -209,7 +172,7 @@ export class UserService implements IUserService {
       ] as [number, number];
     }
 
-    // Handle manual address update (with or without coordinates)
+    // Handle manual address update
     if (dto.address) {
       update.address = {
         ...(dto.address.street !== undefined && { street: dto.address.street }),
@@ -233,147 +196,4 @@ export class UserService implements IUserService {
     }
     return updated;
   }
-
-  // Private helper methods
-  private async createNewUser(userData: {
-    phoneNumber: string;
-    firstName?: string;
-    lastName?: string;
-    otp: string;
-    otpExpiry: Date;
-    countryCode: string;
-  }): Promise<UserDocument> {
-    console.log(userData);
-    const tempPassword = await bcrypt.hash('temp123', 10);
-    const existingUser = await this.findUserByPhoneNumber(userData.phoneNumber);
-    if (existingUser) {
-     return existingUser;
-    }
-    const user = new this.userModel({
-      phoneNumber: userData.phoneNumber,
-      firstName: userData.firstName||"",
-      lastName: userData.lastName ||"",
-      email: `${userData.phoneNumber.replace('+', '')}@temp.com`,
-      password: tempPassword,
-      role: UserRole.USER,
-      otp: userData.otp,
-      otpExpiry: userData.otpExpiry,
-      isPhoneVerified: false,
-      isVerified: false,
-      countryCode: userData.countryCode,
-    });
-
-    return user.save();
-  }
-
-  private async updateExistingUser(
-    user: UserDocument,
-    updateData: { firstName?: string; lastName?: string; otp: string; otpExpiry: Date }
-  ): Promise<UserDocument> {
-    return this.userModel.findOneAndUpdate(
-      { phoneNumber: user.phoneNumber },
-      {
-        otp: updateData.otp,
-        otpExpiry: updateData.otpExpiry,
-        firstName: updateData.firstName || user.firstName,
-        lastName: updateData.lastName || user.lastName,
-      },
-      { new: true }
-    ).exec();
-  }
-
-  private async updateUserOtpForLogin(userData: {phoneNumber: string, otp: string, otpExpiry: Date}): Promise<UserDocument> {
-    return this.userModel.findOneAndUpdate(
-      { phoneNumber: userData.phoneNumber },
-      {
-        otp: userData.otp,
-        otpExpiry: userData.otpExpiry,
-      },
-      { new: true }
-    ).exec();
-  }
-
-  private validateOtpForUser(user: UserDocument, providedOtp: string): void {
-    if (!user.otp || !user.otpExpiry) {
-      throw new BadRequestException('No OTP found for this user');
-    }
-
-    if (this.otpService.isOtpExpired(user)) {
-      throw new BadRequestException('OTP has expired');
-    }
-
-    if (!this.otpService.isOtpValid(user, providedOtp)) {
-      throw new BadRequestException('Invalid OTP');
-    }
-  }
-
-  private async markUserAsVerified(phoneNumber: string): Promise<UserDocument> {
-    return this.userModel.findOneAndUpdate(
-      { phoneNumber },
-      {
-        isPhoneVerified: true,
-        isVerified: true,
-        $unset: { otp: 1, otpExpiry: 1 },
-      },
-      { new: true }
-    ).exec();
-  }
-
-  private async updateUserOtp(phoneNumber: string, otp: string, otpExpiry: Date): Promise<void> {
-    await this.userModel.findOneAndUpdate(
-      { phoneNumber },
-      { otp, otpExpiry }
-    ).exec();
-  }
-
-  private async clearOtpForLogin(phoneNumber: string): Promise<UserDocument> {
-    return this.userModel.findOneAndUpdate(
-      { phoneNumber },
-      {
-        $unset: { otp: 1, otpExpiry: 1 },
-      },
-      { new: true }
-    ).exec();
-  }
-
-  // Response builders
-  private buildRegisterResponse(user: UserDocument, otp: string, otpExpiry: Date, isLogin: boolean = false): RegisterResponseDto {
-    const message = isLogin ? 'Login OTP sent successfully' : 'OTP sent successfully';
-    const tokens = this.authService.buildAuthResponse(user);
-    
-    return {
-      message,
-      phoneNumber: user.phoneNumber,
-      userId: user._id.toString(),
-      otpExpiry,
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
-      // Only include OTP in development mode
-      ...(process.env.NODE_ENV !== 'production' && { otp }),
-    } as RegisterResponseDto;
-  }
-
-  private buildVerifyResponse(user: UserDocument, message: string): VerifyOtpResponseDto {
-    const userResponse = plainToClass(UserResponseDto, user.toObject(), {
-      excludeExtraneousValues: true,
-    });
-
-    return {
-      message,
-      user: userResponse,
-    };
-  }
-
-  private buildResendResponse(phoneNumber: string, otp: string, otpExpiry: Date): ResendOtpResponseDto {
-    return {
-      message: 'OTP resent successfully',
-      phoneNumber,
-      otpExpiry,
-      // Only include OTP in development mode
-      ...(process.env.NODE_ENV !== 'production' && { otp }),
-    };
-  }
-  private phoneNumberWithoutCountryCode(phoneNumber: string): string {
-    return phoneNumber.substring(3);
-  }
-} 
+}

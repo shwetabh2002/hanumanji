@@ -1,39 +1,14 @@
-import { Controller, Post, Body, HttpCode, HttpStatus, UseInterceptors, ClassSerializerInterceptor, Put, UseGuards, Req, Patch, Get } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiBearerAuth } from '@nestjs/swagger';
+import { Controller, Post, Body, HttpCode, HttpStatus, UseGuards, Req, Patch, Get } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBody, ApiBearerAuth } from '@nestjs/swagger';
 
 import { UserService } from './user.service';
-import { RegisterUserDto, VerifyOtpDto, ResendOtpDto } from './dto/register-user.dto';
-import { RegisterResponseDto, VerifyOtpResponseDto, ResendOtpResponseDto } from './dto/user-response.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @ApiTags('users')
 @Controller('users')
 export class UserController {
-  constructor(
-    private readonly userService: UserService,
-  ) {}
-
-  @Post('register')
-  async registerUser(@Body() registerUserDto: RegisterUserDto): Promise<RegisterResponseDto> {
-    // console.log(registerUserDto);
-    return this.userService.registerUser(registerUserDto);
-  }
-
-  @Post('verify-otp')
-  @ApiResponse({ 
-    status: HttpStatus.OK, 
-    description: 'Phone number verified successfully',
-    type: VerifyOtpResponseDto
-  })    
-  async verifyOtp(@Body() verifyOtpDto: VerifyOtpDto): Promise<VerifyOtpResponseDto> {
-    return this.userService.verifyOtp(verifyOtpDto);
-  }
-
-  @Post('resend-otp')
-  async resendOtp(@Body() resendOtpDto: ResendOtpDto): Promise<ResendOtpResponseDto> {
-    return this.userService.resendOtp(resendOtpDto);
-  }
+  constructor(private readonly userService: UserService) {}
 
   @Patch('update-user')
   @ApiBearerAuth('JWT-auth')
@@ -45,6 +20,7 @@ export class UserController {
     const userId = req.user.sub;
     return this.userService.updateUser(userId, dto);
   }
+
   @Get('user-data')
   @ApiBearerAuth('JWT-auth')
   @UseGuards(JwtAuthGuard)
@@ -52,4 +28,4 @@ export class UserController {
     const userId = req.user.sub;
     return this.userService.findUserById(userId);
   }
-} 
+}

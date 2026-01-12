@@ -20,6 +20,7 @@ coverage/
 .env.*
 !.env.example
 !.env.local.example
+!environment.example
 
 # OS files
 .DS_Store

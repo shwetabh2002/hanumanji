@@ -28,7 +28,7 @@ export class GeocodingService {
         headers: {
           'User-Agent': 'Rapido-Clone-Backend/1.0.0',
         },
-        timeout: 5000, // 5 second timeout
+        timeout: 5000,
       });
 
       const data = response.data;
@@ -53,7 +53,6 @@ export class GeocodingService {
     } catch (error) {
       this.logger.error(`Reverse geocoding failed: ${error.message}`);
       
-      // Return fallback data instead of throwing
       return {
         street: 'Unknown',
         city: 'Unknown',
@@ -98,4 +97,5 @@ export class GeocodingService {
       return [];
     }
   }
-} 
+}
+

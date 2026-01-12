@@ -1,15 +1,14 @@
-import { Module, OnApplicationBootstrap, Logger, MiddlewareConsumer, NestModule } from '@nestjs/common';
+import { Module, MiddlewareConsumer, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { MongooseModule } from '@nestjs/mongoose';
-import { ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { APP_GUARD, APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
-import { Connection } from 'mongoose';
 
 // Configuration
 import appConfig from './common/config/app.config';
 
-// Modules
+// Feature Modules
 import { AuthModule } from './modules/auth/auth.module';
 import { UserModule } from './modules/user/user.module';
 import { DriverModule } from './modules/driver/driver.module';
@@ -17,118 +16,122 @@ import { BookingModule } from './modules/booking/booking.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { LocationModule } from './modules/location/location.module';
 
-// Shared Modules
-import { DatabaseModule } from './shared/database/database.module';
-import { CacheModule } from './shared/cache/cache.module';
-import { EventsModule } from './shared/events/events.module';
-import { WebSocketModule } from './shared/websocket/websocket.module';
+// Phase 1 Feature Modules (New Implementation)
+import { BookingsModule } from './modules/bookings/bookings.module';
+import { DriversModule } from './modules/drivers/drivers.module';
+import { RidersModule } from './modules/riders/riders.module';
+import { WebsocketModule } from './modules/websocket/websocket.module';
 
-// Guards, Filters, Interceptors
-import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
+// Shared Infrastructure Modules
+import { DatabaseModule } from './shared/database/database.module';
+import { RedisModule } from './shared/redis/redis.module';
+import { KafkaModule } from './shared/kafka/kafka.module';
+import { WebSocketModule } from './shared/websocket/websocket.module';
+import { HttpModule } from './shared/http/http.module';
+
+// Global Providers
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
-import { ThrottlerGuard } from '@nestjs/throttler';
+
+// Middleware
 import { JwtAuthMiddleware } from './modules/auth/middlewares/jwt-auth.middleware';
+import { RequestIdMiddleware } from './common/middlewares/request-id.middleware';
 
 // Controllers
 import { AppController } from './app.controller';
 
+/**
+ * Root Application Module
+ * 
+ * Orchestrates all feature and infrastructure modules.
+ * Follows modular monolith architecture with clear separation:
+ * 
+ * - Feature Modules: Business logic (auth, booking, etc.)
+ * - Shared Modules: Cross-cutting infrastructure (db, redis, kafka)
+ * - Global Providers: Filters, interceptors, guards
+ */
 @Module({
   imports: [
-    // Configuration
+    // ─────────────────────────────────────────────────────────────
+    // Configuration (loaded first, available globally)
+    // ─────────────────────────────────────────────────────────────
     ConfigModule.forRoot({
       isGlobal: true,
       load: [appConfig],
       envFilePath: ['.env.local', '.env'],
+      cache: true, // Cache env vars for performance
     }),
-    
-    // Database
-    MongooseModule.forRootAsync({
-      useFactory: async (configService: ConfigService) => {
-        const logger = new Logger('MongoDB');
-        const uri = configService.get<string>('app.database.uri');
-        
-        return {
-          uri,
-          ...configService.get('app.database.options'),
-          connectionFactory: (connection: Connection) => {
-            connection.on('connected', () => {
-              logger.log('✅ MongoDB connected successfully');
-              logger.log(`🗄️  Database: ${connection.db?.databaseName || 'Unknown'}`);
-              logger.log(`📊 MongoDB connection state: CONNECTED`);
-            });
-            
-            connection.on('disconnected', () => {
-              logger.warn('❌ MongoDB disconnected');
-            });
-            
-            connection.on('error', (error) => {
-              logger.error('💥 MongoDB connection error:', error.message);
-            });
-            
-            return connection;
-          },
-        };
-      },
-      inject: [ConfigService],
+
+    // ─────────────────────────────────────────────────────────────
+    // Infrastructure Modules
+    // ─────────────────────────────────────────────────────────────
+    DatabaseModule,     // MongoDB
+    RedisModule,        // Redis (caching, real-time state)
+    KafkaModule,        // Event streaming
+    WebSocketModule,    // Real-time client communication
+    HttpModule,         // External HTTP clients
+
+    // ─────────────────────────────────────────────────────────────
+    // Framework Modules
+    // ─────────────────────────────────────────────────────────────
+    EventEmitterModule.forRoot({
+      wildcard: false,
+      delimiter: '.',
+      newListener: false,
+      removeListener: false,
+      maxListeners: 10,
+      verboseMemoryLeak: true,
+      ignoreErrors: false,
     }),
-    
-    // Rate Limiting
     ThrottlerModule.forRootAsync({
-      useFactory: (configService: ConfigService) => [
-        {
-          ttl: configService.get<number>('app.throttle.ttl') * 1000,
-          limit: configService.get<number>('app.throttle.limit'),
-        },
-      ],
       inject: [ConfigService],
+      useFactory: (config: ConfigService) => [{
+        ttl: config.get<number>('app.throttle.ttl', 60) * 1000,
+        limit: config.get<number>('app.throttle.limit', 100),
+      }],
     }),
-    
-    // Schedule
     ScheduleModule.forRoot(),
-    
-    // Shared modules
-    DatabaseModule,
-    CacheModule,
-    EventsModule,
-    WebSocketModule,
-    
-    // Feature modules
+
+    // ─────────────────────────────────────────────────────────────
+    // Feature Modules (Business Logic)
+    // ─────────────────────────────────────────────────────────────
     AuthModule,
     UserModule,
     DriverModule,
     BookingModule,
     PaymentsModule,
     LocationModule,
+
+    // Phase 1 Implementation Modules
+    BookingsModule,
+    DriversModule,
+    RidersModule,
+    WebsocketModule,
   ],
+
   controllers: [AppController],
+
   providers: [
-    {
-      provide: APP_GUARD,
-      useClass: ThrottlerGuard,
-    },
-    {
-      provide: APP_FILTER,
-      useClass: GlobalExceptionFilter,
-    },
-    {
-      provide: APP_INTERCEPTOR,
-      useClass: LoggingInterceptor,
-    },
+    // Global rate limiting
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    
+    // Global exception handling
+    { provide: APP_FILTER, useClass: GlobalExceptionFilter },
+    
+    // Global request/response logging
+    { provide: APP_INTERCEPTOR, useClass: LoggingInterceptor },
   ],
 })
-export class AppModule implements OnApplicationBootstrap, NestModule {
-  private readonly logger = new Logger(AppModule.name);
-
-  async onApplicationBootstrap() {
-    this.logger.log('🚀 Application modules initialized');
-    this.logger.log('🔧 All services bootstrapped successfully');
-    this.logger.log('📦 Modules loaded: Auth, User, Driver, Booking, Payments, Location');
-    this.logger.log('🛡️  Security: JWT Auth, Rate Limiting, CORS configured');
-    this.logger.log('📡 Infrastructure: MongoDB, Redis, Kafka ready');
-  }
-
-  configure(consumer: MiddlewareConsumer) {
-    consumer.apply(JwtAuthMiddleware).forRoutes('*');
+export class AppModule implements NestModule {
+  /**
+   * Configure middleware pipeline
+   * Order matters: RequestId → Auth
+   */
+  configure(consumer: MiddlewareConsumer): void {
+    consumer
+      .apply(RequestIdMiddleware)
+      .forRoutes('*')
+      .apply(JwtAuthMiddleware)
+      .forRoutes('*');
   }
 }

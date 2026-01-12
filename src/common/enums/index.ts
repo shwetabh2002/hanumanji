@@ -1,6 +1,10 @@
 export enum UserRole {
   USER = 'user',
+}
 
+export enum UserType {
+  USER = 'user',
+  DRIVER = 'driver',
 }
 
 export enum UserStatus {
