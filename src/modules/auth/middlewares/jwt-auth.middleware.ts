@@ -12,12 +12,27 @@ export class JwtAuthMiddleware implements NestMiddleware {
     /^\/users\/resend-otp$/,
     /^\/auth\/refresh$/,
     /^\/auth\/login-otp$/,
-    
+
     // Driver auth
     /^\/driver\/auth\/register$/,
     /^\/driver\/auth\/verify-otp$/,
     /^\/driver\/auth\/resend-otp$/,
-    
+
+    // Driver operations (public endpoints)
+    /^\/api\/v1\/drivers\/.+\/location$/,
+
+    // Rider operations (public endpoints)
+    /^\/api\/v1\/riders\/quick-destinations/,
+    /^\/api\/v1\/riders\/estimate/,
+
+    // Booking operations (public for testing - should be protected in production)
+    /^\/api\/v1\/bookings\/[^\/]+$/,           // GET /api/v1/bookings/:id
+    /^\/api\/v1\/bookings\/[^\/]+\/accept$/,   // POST /api/v1/bookings/:id/accept
+    /^\/api\/v1\/bookings\/[^\/]+\/reject$/,   // POST /api/v1/bookings/:id/reject
+    /^\/api\/v1\/bookings\/[^\/]+\/start$/,    // POST /api/v1/bookings/:id/start
+    /^\/api\/v1\/bookings\/[^\/]+\/complete$/, // POST /api/v1/bookings/:id/complete
+    /^\/api\/v1\/bookings\/[^\/]+\/cancel$/,   // POST /api/v1/bookings/:id/cancel
+
     // Public endpoints
     /^\/bookings\/estimate\/fare/,
     /^\/drivers\/nearby/,

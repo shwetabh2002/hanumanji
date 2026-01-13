@@ -22,7 +22,7 @@ export class Booking extends Document {
 
   @Prop({
     type: {
-      address: { type: String, required: true },
+      address: { type: String, required: false }, // Optional: can be derived from coordinates
       coordinates: {
         lat: { type: Number, required: true },
         lng: { type: Number, required: true }
@@ -31,7 +31,7 @@ export class Booking extends Document {
     required: true
   })
   pickup: {
-    address: string;
+    address?: string;
     coordinates: {
       lat: number;
       lng: number;
@@ -40,7 +40,7 @@ export class Booking extends Document {
 
   @Prop({
     type: {
-      address: { type: String, required: true },
+      address: { type: String, required: false }, // Optional: can be derived from coordinates
       coordinates: {
         lat: { type: Number, required: true },
         lng: { type: Number, required: true }
@@ -49,7 +49,7 @@ export class Booking extends Document {
     required: true
   })
   drop: {
-    address: string;
+    address?: string;
     coordinates: {
       lat: number;
       lng: number;

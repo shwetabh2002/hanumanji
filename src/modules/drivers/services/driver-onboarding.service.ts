@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, ConflictException } from '@nestjs/common';
+import { Injectable, ConflictException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { CompleteRegistrationDto } from '../dto/complete-registration.dto';
@@ -62,20 +62,33 @@ export class DriverOnboardingService {
   /**
    * Complete driver registration with instant approval
    * Phase 1: Approve immediately, verify documents within 24 hours
+   * @param dto - Driver registration details
+   * @param userId - User ID from JWT token (links to users collection)
    */
-  async completeRegistration(dto: CompleteRegistrationDto) {
+  async completeRegistration(dto: CompleteRegistrationDto, userId: string) {
 
-    // Check if driver already exists
-    const existingDriver = await this.driverModel.findOne({
-      phoneNumber: dto.phoneNumber
-    });
+    // Check if this userId already has a driver record
+    const existingDriver = await this.driverModel.findOne({ userId });
 
     if (existingDriver) {
       throw new ConflictException({
-        message: 'Phone number already registered',
-        messageHi: 'यह phone number पहले से registered है',
+        message: 'Driver registration already completed',
+        messageHi: 'Driver registration पहले से complete है',
         driverId: existingDriver._id,
         status: existingDriver.verificationStatus
+      });
+    }
+
+    // Check if phone number already used by another driver
+    const duplicatePhone = await this.driverModel.findOne({
+      phoneNumber: dto.phoneNumber
+    });
+
+    if (duplicatePhone) {
+      throw new ConflictException({
+        message: 'Phone number already registered',
+        messageHi: 'यह phone number पहले से registered है',
+        driverId: duplicatePhone._id
       });
     }
 
@@ -97,6 +110,7 @@ export class DriverOnboardingService {
 
     // Create driver with instant approval
     const driver = await this.driverModel.create({
+      userId, // Link to users collection via JWT userId
       phoneNumber: dto.phoneNumber,
       countryCode: '+91',
       firstName: dto.firstName,
@@ -113,13 +127,6 @@ export class DriverOnboardingService {
       isVerified: false,  // Will be verified within 24 hours
       isActive: true,
       status: 'offline',
-
-      // Service area restriction
-      serviceArea: {
-        type: 'Point',
-        coordinates: [pariChowkArea.center.lng, pariChowkArea.center.lat],
-        radius: pariChowkArea.radiusKm
-      },
 
       // Document placeholders
       documents: {
@@ -271,16 +278,20 @@ export class DriverOnboardingService {
   /**
    * Update driver documents
    * Called after document upload
+   * @param userId - User ID from JWT token
    */
   async updateDocuments(
-    driverId: string,
+    userId: string,
     documentType: 'license' | 'rc' | 'aadhaar' | 'photo',
     url: string
   ) {
-    const driver = await this.driverModel.findById(driverId);
+    const driver = await this.driverModel.findOne({ userId });
 
     if (!driver) {
-      throw new BadRequestException('Driver not found');
+      throw new BadRequestException({
+        message: 'Driver not found. Please complete registration first.',
+        messageHi: 'Driver नहीं मिला। कृपया पहले registration complete करें।'
+      });
     }
 
     // Update document URL

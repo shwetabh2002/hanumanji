@@ -30,17 +30,27 @@ export class BookingsController {
    * POST /api/v1/bookings
    */
   @Post()
+  @ApiBearerAuth('JWT-auth')
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Create new ride booking' })
   @ApiResponse({ status: 201, description: 'Booking created, searching for captain' })
   @ApiResponse({ status: 400, description: 'Invalid location or outside service area' })
-  async createBooking(@Body() body: {
-    riderId: string;
-    pickup: { address: string; lat: number; lng: number };
-    drop: { address: string; lat: number; lng: number };
-    fare: number;
-    userType?: 'student' | 'regular';
-  }) {
-    const booking = await this.rideService.createBooking(body);
+  async createBooking(
+    @Req() req: any,
+    @Body() body: {
+      pickup: { address?: string; lat: number; lng: number };
+      drop: { address?: string; lat: number; lng: number };
+      fare: number;
+      userType?: 'student' | 'regular';
+    }
+  ) {
+    const riderId = req.user.sub; // Extract from JWT
+    const booking = await this.rideService.createBooking({
+      ...body,
+      riderId,
+      pickup: { ...body.pickup, address: body.pickup.address || '' },
+      drop: { ...body.drop, address: body.drop.address || '' }
+    });
 
     // Start captain matching in background
     // The matching service will emit events when captain is found

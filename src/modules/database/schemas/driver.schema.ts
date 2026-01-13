@@ -7,6 +7,9 @@ import { Document } from 'mongoose';
 
 @Schema({ timestamps: true })
 export class Driver extends Document {
+  @Prop({ required: true, unique: true, index: true })
+  userId: string; // Links to User._id for JWT authentication
+
   @Prop({ required: true, unique: true })
   phoneNumber: string;
 
@@ -74,11 +77,11 @@ export class Driver extends Document {
   @Prop({
     type: {
       type: { type: String, enum: ['Point'], default: 'Point' },
-      coordinates: { type: [Number], required: true }, // [lng, lat]
-      radius: { type: Number, required: true }
+      coordinates: [Number], // [lng, lat]
+      radius: Number
     }
   })
-  serviceArea: {
+  serviceArea?: {
     type: string;
     coordinates: number[];
     radius: number;

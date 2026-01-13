@@ -12,7 +12,7 @@ import appConfig from './common/config/app.config';
 import { AuthModule } from './modules/auth/auth.module';
 import { UserModule } from './modules/user/user.module';
 import { DriverModule } from './modules/driver/driver.module';
-import { BookingModule } from './modules/booking/booking.module';
+// import { BookingModule } from './modules/booking/booking.module'; // Disabled: Schema collision with BookingsModule
 import { PaymentsModule } from './modules/payments/payments.module';
 import { LocationModule } from './modules/location/location.module';
 
@@ -98,7 +98,7 @@ import { AppController } from './app.controller';
     AuthModule,
     UserModule,
     DriverModule,
-    BookingModule,
+    // BookingModule, // Removed: Schema collision with BookingsModule (Phase 1)
     PaymentsModule,
     LocationModule,
 

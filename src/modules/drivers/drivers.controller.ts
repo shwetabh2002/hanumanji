@@ -1,5 +1,6 @@
-import { Controller, Post, Get, Body, Param, UseGuards, Inject, forwardRef } from '@nestjs/common';
+import { Controller, Post, Get, Body, Param, UseGuards, Inject, forwardRef, Req } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { DriverOnboardingService } from './services/driver-onboarding.service';
 import { RedisLocationService } from '../location/redis-location.service';
 import { DriverService } from '../driver/driver.service';
@@ -38,13 +39,18 @@ export class DriversController {
   /**
    * Complete driver registration with instant approval
    * POST /api/v1/drivers/complete-registration
+   * Requires: User must be registered via /users/register with type='driver' first
+   * Authenticated endpoint: Creates driver record linked to user by userId
    */
   @Post('complete-registration')
+  @ApiBearerAuth('JWT-auth')
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Complete driver registration (instant approval)' })
   @ApiResponse({ status: 201, description: 'Driver registered successfully' })
   @ApiResponse({ status: 409, description: 'Phone number or vehicle already registered' })
-  async completeRegistration(@Body() dto: CompleteRegistrationDto) {
-    return await this.onboardingService.completeRegistration(dto);
+  async completeRegistration(@Req() req: any, @Body() dto: CompleteRegistrationDto) {
+    const userId = req.user.sub; // Extract userId from JWT
+    return await this.onboardingService.completeRegistration(dto, userId);
   }
 
   /**
@@ -64,12 +70,16 @@ export class DriversController {
    * POST /api/v1/drivers/online
    */
   @Post('online')
+  @ApiBearerAuth('JWT-auth')
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Go online and start receiving ride requests' })
   @ApiResponse({ status: 200, description: 'Driver is now online' })
   async goOnline(
-    @Body() body: { driverId: string; location: LocationDto }
+    @Req() req: any,
+    @Body() body: { location: LocationDto }
   ) {
-    const { driverId, location } = body;
+    const driverId = req.user.sub;
+    const { location } = body;
 
     // Get driver to determine vehicle type for Redis ONLINE_DRIVERS set
     const driver = await this.driverService.findById(driverId);
@@ -146,10 +156,12 @@ export class DriversController {
    * POST /api/v1/drivers/offline
    */
   @Post('offline')
+  @ApiBearerAuth('JWT-auth')
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Go offline and stop receiving ride requests' })
   @ApiResponse({ status: 200, description: 'Driver is now offline' })
-  async goOffline(@Body() body: { driverId: string }) {
-    const { driverId } = body;
+  async goOffline(@Req() req: any) {
+    const driverId = req.user.sub;
 
     // Get driver to determine vehicle type for Redis ONLINE_DRIVERS set
     const driver = await this.driverService.findById(driverId);
@@ -189,12 +201,16 @@ export class DriversController {
    * POST /api/v1/drivers/location
    */
   @Post('location')
+  @ApiBearerAuth('JWT-auth')
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Update driver location (every 10s when online)' })
   @ApiResponse({ status: 200, description: 'Location updated' })
   async updateLocation(
-    @Body() body: { driverId: string; location: LocationDto }
+    @Req() req: any,
+    @Body() body: { location: LocationDto }
   ) {
-    const { driverId, location } = body;
+    const driverId = req.user.sub;
+    const { location } = body;
 
     // Update Redis location
     await this.locationService.updateCaptainLocation({
@@ -220,19 +236,22 @@ export class DriversController {
    * POST /api/v1/drivers/documents/upload
    */
   @Post('documents/upload')
+  @ApiBearerAuth('JWT-auth')
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Upload driver documents (license, RC, Aadhaar, photo)' })
   @ApiResponse({ status: 200, description: 'Document uploaded successfully' })
   async uploadDocument(
+    @Req() req: any,
     @Body() body: {
-      driverId: string;
       documentType: 'license' | 'rc' | 'aadhaar' | 'photo';
       url: string; // For MVP, assume file is already uploaded to storage
     }
   ) {
-    const { driverId, documentType, url } = body;
+    const userId = req.user.sub; // Extract userId from JWT
+    const { documentType, url } = body;
 
     return await this.onboardingService.updateDocuments(
-      driverId,
+      userId,
       documentType,
       url
     );

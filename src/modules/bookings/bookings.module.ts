@@ -21,6 +21,7 @@ import { BookingsController } from './bookings.controller';
 import { LocationModule } from '../location/location.module';
 import { DriversModule } from '../drivers/drivers.module';
 import { UserModule } from '../user/user.module';
+import { AuthModule } from '../auth/auth.module';
 
 /**
  * Bookings Module (Phase 1 Implementation)
@@ -40,6 +41,7 @@ import { UserModule } from '../user/user.module';
       { name: Driver.name, schema: DriverSchema },  // Import Driver model for CaptainMatchingService
       { name: User.name, schema: UserSchema },      // Import User model for RideManagementService
     ]),
+    AuthModule,     // For JWT authentication
     LocationModule, // For GeofenceService, RedisLocationService
     DriversModule,  // For DriverOnboardingService
     UserModule,     // For UserService
