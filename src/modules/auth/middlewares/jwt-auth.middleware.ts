@@ -24,6 +24,7 @@ export class JwtAuthMiddleware implements NestMiddleware {
     // Rider operations (public endpoints)
     /^\/api\/v1\/riders\/quick-destinations/,
     /^\/api\/v1\/riders\/estimate/,
+    /^\/api\/v1\/riders\/map-preview$/,
 
     // Booking operations (public for testing - should be protected in production)
     /^\/api\/v1\/bookings\/[^\/]+$/,           // GET /api/v1/bookings/:id

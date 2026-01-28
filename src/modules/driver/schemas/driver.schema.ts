@@ -1,6 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
-import { DriverStatus, VehicleType } from '../../../common/enums';
+import { Document, Schema as MongooseSchema } from 'mongoose';
+import { DriverStatus, VehicleType, DocumentVerificationStatus } from '../../../common/enums';
 
 export type DriverDocument = Driver & Document;
 
@@ -106,35 +106,25 @@ export class DriverBankDetails {
   collection: 'drivers',
 })
 export class Driver {
+  // ============ Link to User Account ============
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User', required: true, unique: true })
+  userId: MongooseSchema.Types.ObjectId;
+
   @Prop({ required: true, unique: true })
   phoneNumber: string;
 
   @Prop({ default: '+91' })
   countryCode: string;
 
-  @Prop({ type: String, enum: ['en', 'hi'], default: 'en' })
-  language: 'en' | 'hi';
-
+  // ============ Basic Driver Info (Duplicated for Query Convenience) ============
   @Prop({ required: true })
   firstName: string;
 
   @Prop({ required: true })
   lastName: string;
 
-  @Prop({ unique: true, sparse: true }) // sparse: allows null but ensures unique when present
-  email?: string;
-
-  @Prop()
-  password?: string;
-
-  @Prop({ type: String, enum: DriverStatus, default: DriverStatus.OFFLINE })
-  status: DriverStatus;
-
-  @Prop({ default: false })
-  isPhoneVerified: boolean;
-
-  @Prop({ default: false })
-  isVerified: boolean; // Full verification (documents, etc.)
+  @Prop({ type: String, enum: ['en', 'hi'], default: 'en' })
+  language: 'en' | 'hi';
 
   @Prop()
   profilePicture?: string;
@@ -142,17 +132,57 @@ export class Driver {
   @Prop()
   dateOfBirth?: Date;
 
+  // ============ Driver Status & Approval ============
+  @Prop({ type: String, enum: DriverStatus, default: DriverStatus.PENDING_APPROVAL })
+  status: DriverStatus;
+
+  @Prop({ default: false })
+  isVerified: boolean; // Full driver verification (documents approved, background check, etc.)
+
+  @Prop({ default: false })
+  canGoOnline: boolean; // Can driver go online (approved and verified)
+
+  // ============ KYC Documents ============
   @Prop({ unique: true, sparse: true }) // sparse: allows null but ensures unique when present
   licenseNumber?: string;
 
   @Prop()
   licenseExpiry?: Date;
 
+  @Prop({ required: false })
+  aadharNumber?: string; // Full 12-digit Aadhaar (encrypt in production)
+
+  @Prop({ required: false })
+  panNumber?: string; // PAN card number (format: ABCDE1234F)
+
+  // Document Verification Status
+  @Prop({ type: String, enum: DocumentVerificationStatus, default: DocumentVerificationStatus.NOT_UPLOADED })
+  licenseVerificationStatus: DocumentVerificationStatus;
+
+  @Prop({ type: String, enum: DocumentVerificationStatus, default: DocumentVerificationStatus.NOT_UPLOADED })
+  aadharVerificationStatus: DocumentVerificationStatus;
+
+  @Prop({ type: String, enum: DocumentVerificationStatus, default: DocumentVerificationStatus.NOT_UPLOADED })
+  panVerificationStatus: DocumentVerificationStatus;
+
+  @Prop({ type: String, enum: DocumentVerificationStatus, default: DocumentVerificationStatus.NOT_UPLOADED })
+  rcVerificationStatus: DocumentVerificationStatus;
+
+  // Approval Tracking
   @Prop()
-  aadharNumber?: string;
+  approvedBy?: string; // Admin user ID who approved
 
   @Prop()
-  panNumber?: string;
+  approvedAt?: Date;
+
+  @Prop()
+  rejectedBy?: string; // Admin user ID who rejected
+
+  @Prop()
+  rejectedAt?: Date;
+
+  @Prop()
+  rejectionReason?: string;
 
   @Prop({ type: DriverVehicle })
   vehicle?: DriverVehicle;
@@ -169,28 +199,18 @@ export class Driver {
 
   @Prop({ type: DriverBankDetails })
   bankDetails?: DriverBankDetails;
-
-  @Prop()
-  lastLogin?: Date;
-
-  // OTP fields (for phone-based auth)
-  @Prop()
-  otp?: string;
-
-  @Prop()
-  otpExpiry?: Date;
-
-  @Prop()
-  refreshToken?: string;
 }
 
 export const DriverSchema = SchemaFactory.createForClass(Driver);
 
 // Indexes (avoid duplicates - unique/index in @Prop creates its own)
-// phoneNumber, email, licenseNumber: already indexed via unique: true
+// userId: already indexed via unique: true
+// phoneNumber: already indexed via unique: true
+// licenseNumber: already indexed via unique: true
 // vehicle.registrationNumber: already indexed via unique: true in DriverVehicle
 // location.coordinates: already indexed via index: '2dsphere' in DriverLocation
 // currentLocation: already indexed via index: '2dsphere' in @Prop
 DriverSchema.index({ status: 1 });
 DriverSchema.index({ 'vehicle.type': 1 });
 DriverSchema.index({ createdAt: -1 });
+DriverSchema.index({ userId: 1, phoneNumber: 1 }); // Compound index for user-driver lookup

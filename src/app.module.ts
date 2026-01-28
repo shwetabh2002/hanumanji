@@ -12,13 +12,11 @@ import appConfig from './common/config/app.config';
 import { AuthModule } from './modules/auth/auth.module';
 import { UserModule } from './modules/user/user.module';
 import { DriverModule } from './modules/driver/driver.module';
-// import { BookingModule } from './modules/booking/booking.module'; // Disabled: Schema collision with BookingsModule
 import { PaymentsModule } from './modules/payments/payments.module';
 import { LocationModule } from './modules/location/location.module';
 
 // Phase 1 Feature Modules (New Implementation)
 import { BookingsModule } from './modules/bookings/bookings.module';
-import { DriversModule } from './modules/drivers/drivers.module';
 import { RidersModule } from './modules/riders/riders.module';
 import { WebsocketModule } from './modules/websocket/websocket.module';
 
@@ -28,6 +26,7 @@ import { RedisModule } from './shared/redis/redis.module';
 import { KafkaModule } from './shared/kafka/kafka.module';
 import { WebSocketModule } from './shared/websocket/websocket.module';
 import { HttpModule } from './shared/http/http.module';
+import { ServicesModule } from './shared/services/services.module';
 
 // Global Providers
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
@@ -70,6 +69,7 @@ import { AppController } from './app.controller';
     KafkaModule,        // Event streaming
     WebSocketModule,    // Real-time client communication
     HttpModule,         // External HTTP clients
+    ServicesModule,     // Shared services (Google Maps, etc.)
 
     // ─────────────────────────────────────────────────────────────
     // Framework Modules
@@ -98,13 +98,11 @@ import { AppController } from './app.controller';
     AuthModule,
     UserModule,
     DriverModule,
-    // BookingModule, // Removed: Schema collision with BookingsModule (Phase 1)
     PaymentsModule,
     LocationModule,
 
     // Phase 1 Implementation Modules
     BookingsModule,
-    DriversModule,
     RidersModule,
     WebsocketModule,
   ],

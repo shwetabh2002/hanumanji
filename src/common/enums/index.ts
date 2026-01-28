@@ -45,9 +45,23 @@ export enum PaymentMethod {
 }
 
 export enum DriverStatus {
-  OFFLINE = 'offline',
-  ONLINE = 'online',
-  BUSY = 'busy',
+  // Registration & Approval States
+  PENDING_APPROVAL = 'pending_approval',     // Registered, awaiting admin approval
+  DOCUMENTS_PENDING = 'documents_pending',   // Approved but documents incomplete
+  APPROVED = 'approved',                     // Fully approved and verified
+  REJECTED = 'rejected',                     // Registration rejected
+
+  // Operational States (only for approved drivers)
+  OFFLINE = 'offline',                       // Approved driver, currently offline
+  ONLINE = 'online',                         // Approved driver, accepting rides
+  BUSY = 'busy',                             // Approved driver, on a ride
+}
+
+export enum DocumentVerificationStatus {
+  NOT_UPLOADED = 'not_uploaded',
+  UPLOADED = 'uploaded',
+  VERIFIED = 'verified',
+  REJECTED = 'rejected',
 }
 
 export enum Environment {

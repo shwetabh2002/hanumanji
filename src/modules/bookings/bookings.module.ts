@@ -19,7 +19,7 @@ import { BookingsController } from './bookings.controller';
 
 // Dependencies
 import { LocationModule } from '../location/location.module';
-import { DriversModule } from '../drivers/drivers.module';
+import { DriverModule } from '../driver/driver.module';
 import { UserModule } from '../user/user.module';
 import { AuthModule } from '../auth/auth.module';
 
@@ -43,7 +43,7 @@ import { AuthModule } from '../auth/auth.module';
     ]),
     AuthModule,     // For JWT authentication
     LocationModule, // For GeofenceService, RedisLocationService
-    DriversModule,  // For DriverOnboardingService
+    DriverModule,   // For DriverOnboardingService
     UserModule,     // For UserService
   ],
   providers: [

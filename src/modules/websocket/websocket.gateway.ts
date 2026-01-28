@@ -9,6 +9,9 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { OnEvent } from '@nestjs/event-emitter';
+import { Interval } from '@nestjs/schedule';
+import { Logger } from '@nestjs/common';
+import { RedisLocationService } from '../location/redis-location.service';
 
 /**
  * WebSocket Gateway
@@ -41,25 +44,54 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
   @WebSocketServer()
   server: Server;
 
+  private readonly logger = new Logger(WebsocketGateway.name);
+
   // Track connected users
   private connectedUsers = new Map<string, string>(); // userId -> socketId
+
+  // Track rider subscriptions for real-time driver updates
+  // Maps socketId to subscription data (pickup location)
+  private driverLocationSubscriptions = new Map<string, {
+    socketId: string;
+    pickup: { lat: number; lng: number };
+    lastDrivers: string[]; // Track last seen drivers for change detection
+  }>();
+
+  constructor(
+    private readonly locationService: RedisLocationService
+  ) {}
 
   /**
    * Handle client connection
    */
   handleConnection(@ConnectedSocket() client: ClientSocket) {
-    console.log(`Client connected: ${client.id}`);
+    this.logger.log(`✅ Client connected:`, {
+      socketId: client.id,
+      timestamp: new Date().toISOString(),
+    });
   }
 
   /**
    * Handle client disconnection
    */
   handleDisconnect(@ConnectedSocket() client: ClientSocket) {
-    console.log(`Client disconnected: ${client.id}`);
+    this.logger.log(`❌ Client disconnected:`, {
+      socketId: client.id,
+      userId: client.userId,
+      userType: client.userType,
+      timestamp: new Date().toISOString(),
+    });
 
     // Remove from connected users
     if (client.userId) {
       this.connectedUsers.delete(client.userId);
+      this.logger.debug(`Removed user ${client.userId} from connected users map`);
+    }
+
+    // Remove from driver location subscriptions
+    if (this.driverLocationSubscriptions.has(client.id)) {
+      this.driverLocationSubscriptions.delete(client.id);
+      this.logger.debug(`Removed client ${client.id} from driver location subscriptions`);
     }
   }
 
@@ -75,7 +107,7 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
     client.userType = data.userType;
     this.connectedUsers.set(data.userId, client.id);
 
-    console.log(`User registered: ${data.userId} as ${data.userType}`);
+    this.logger.log(`User registered: ${data.userId} as ${data.userType}`);
 
     return {
       event: 'registered',
@@ -107,9 +139,9 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         displayMessageHi: 'नया ride request!'
       });
 
-      console.log(`Ride request sent to captain ${payload.driverId}`);
+      this.logger.log(`Ride request sent to captain ${payload.driverId}`);
     } else {
-      console.log(`Captain ${payload.driverId} not connected to WebSocket`);
+      this.logger.warn(`Captain ${payload.driverId} not connected to WebSocket`);
     }
   }
 
@@ -140,7 +172,7 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         displayMessageHi: 'Captain mil gaya! आपको लेने आ रहा है।'
       });
 
-      console.log(`Ride matched notification sent to rider ${payload.riderId}`);
+      this.logger.log(`Ride matched notification sent to rider ${payload.riderId}`);
     }
   }
 
@@ -265,6 +297,162 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
           ? 'आपने ride cancel की'
           : 'Rider ने ride cancel किया'
       });
+    }
+  }
+
+  /**
+   * Subscribe to real-time driver location updates
+   * Client subscribes with pickup location to receive nearby driver updates
+   *
+   * Used for map booking screen - shows moving driver markers in real-time
+   */
+  @SubscribeMessage('subscribe-driver-locations')
+  handleSubscribeDriverLocations(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { pickup: { lat: number; lng: number } }
+  ) {
+    const { pickup } = data;
+
+    this.logger.log(`📡 Subscribe request received:`, {
+      socketId: client.id,
+      pickup,
+    });
+
+    // Validate pickup coordinates
+    if (!pickup || typeof pickup.lat !== 'number' || typeof pickup.lng !== 'number') {
+      this.logger.warn(`⚠️ Invalid subscription request from ${client.id}:`, {
+        pickup,
+      });
+
+      return {
+        event: 'error',
+        data: {
+          success: false,
+          message: 'Invalid pickup coordinates'
+        }
+      };
+    }
+
+    // Store subscription
+    this.driverLocationSubscriptions.set(client.id, {
+      socketId: client.id,
+      pickup,
+      lastDrivers: []
+    });
+
+    this.logger.log(`✅ Client subscribed to driver locations:`, {
+      socketId: client.id,
+      pickup: `${pickup.lat},${pickup.lng}`,
+      totalSubscriptions: this.driverLocationSubscriptions.size,
+    });
+
+    return {
+      event: 'subscription-confirmed',
+      data: {
+        success: true,
+        message: 'Subscribed to driver location updates'
+      }
+    };
+  }
+
+  /**
+   * Unsubscribe from driver location updates
+   */
+  @SubscribeMessage('unsubscribe-driver-locations')
+  handleUnsubscribeDriverLocations(@ConnectedSocket() client: Socket) {
+    const hadSubscription = this.driverLocationSubscriptions.has(client.id);
+    this.driverLocationSubscriptions.delete(client.id);
+
+    this.logger.log(`🔌 Client unsubscribed from driver locations:`, {
+      socketId: client.id,
+      hadSubscription,
+      remainingSubscriptions: this.driverLocationSubscriptions.size,
+    });
+
+    return {
+      event: 'unsubscription-confirmed',
+      data: {
+        success: true,
+        message: 'Unsubscribed from driver location updates'
+      }
+    };
+  }
+
+  /**
+   * Broadcast driver location updates every 3 seconds
+   * Runs automatically for all subscribed clients
+   */
+  @Interval(3000) // Every 3 seconds
+  async broadcastDriverLocationUpdates() {
+    // Skip if no subscriptions
+    if (this.driverLocationSubscriptions.size === 0) {
+      return;
+    }
+
+    this.logger.debug(`🔄 Broadcasting driver locations to ${this.driverLocationSubscriptions.size} subscribers`);
+
+    // Process each subscription
+    for (const [socketId, subscription] of this.driverLocationSubscriptions) {
+      try {
+        const { pickup, lastDrivers } = subscription;
+
+        // Find nearby available drivers (5km radius, max 20)
+        const nearbyCaptains = await this.locationService.findNearbyCaptains(
+          pickup.lat,
+          pickup.lng,
+          5, // 5km radius
+          20 // Max 20 drivers
+        );
+
+        // Filter out busy drivers and build driver list
+        const availableDrivers = [];
+        for (const captain of nearbyCaptains) {
+          const isBusy = await this.locationService.isCaptainBusy(captain.driverId);
+          if (!isBusy) {
+            // Get driver metadata (heading, speed)
+            const location = await this.locationService.getCaptainLocation(captain.driverId);
+            if (location) {
+              availableDrivers.push({
+                id: captain.driverId,
+                coordinates: {
+                  lat: location.latitude,
+                  lng: location.longitude
+                },
+                heading: location.heading || 0,
+                speed: location.speed || 0
+              });
+            }
+          }
+        }
+
+        // Detect changes (which drivers are new, which went offline)
+        const currentDriverIds = availableDrivers.map(d => d.id);
+        const removedDrivers = lastDrivers.filter(id => !currentDriverIds.includes(id));
+        const newDrivers = currentDriverIds.filter(id => !lastDrivers.includes(id));
+
+        this.logger.debug(`📡 Emitting driver update to ${socketId}:`, {
+          total: nearbyCaptains.length,
+          available: availableDrivers.length,
+          newDrivers: newDrivers.length,
+          removedDrivers: removedDrivers.length,
+        });
+
+        // Update last seen drivers
+        subscription.lastDrivers = currentDriverIds;
+
+        // Emit update to this specific client
+        this.server.to(socketId).emit('driver-locations-update', {
+          drivers: availableDrivers,
+          removed: removedDrivers,
+          timestamp: new Date().toISOString()
+        });
+
+      } catch (error) {
+        this.logger.error(`❌ Error broadcasting to client ${socketId}:`, {
+          error: error.message,
+          stack: error.stack,
+        });
+      }
     }
   }
 

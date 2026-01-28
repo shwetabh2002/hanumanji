@@ -1,8 +1,9 @@
-import { Controller, Get, Query } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
+import { Controller, Get, Post, Query, Body } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiBody } from '@nestjs/swagger';
 import { GeofenceService } from '../location/geofence.service';
 import { FareCalculationService } from '../bookings/services/fare-calculation.service';
 import { RedisLocationService } from '../location/redis-location.service';
+import { GoogleMapsService } from '../../shared/services/google-maps.service';
 import {
   PARI_CHOWK_POPULAR_DESTINATIONS,
   getDestinationsForUserType
@@ -24,7 +25,8 @@ export class RidersController {
   constructor(
     private readonly geofenceService: GeofenceService,
     private readonly fareService: FareCalculationService,
-    private readonly locationService: RedisLocationService
+    private readonly locationService: RedisLocationService,
+    private readonly googleMapsService: GoogleMapsService
   ) {}
 
   /**
@@ -253,5 +255,335 @@ export class RidersController {
       displayText: fareBreakdown.displayText,
       displayTextHi: fareBreakdown.displayTextHi
     };
+  }
+
+  /**
+   * Map Preview - Get everything needed to display booking map
+   * POST /api/v1/riders/map-preview
+   *
+   * Backend-Heavy: Returns ALL calculated data including:
+   * - Map config (center, bounds)
+   * - Pickup/drop markers
+   * - Nearby available drivers with positions
+   * - Calculated fare and ETA
+   * - Availability stats
+   *
+   * Mobile just displays this data with ZERO business logic
+   */
+  @Post('map-preview')
+  @ApiOperation({
+    summary: 'Get complete map data for booking screen (backend-heavy)',
+    description: 'Returns map config, markers, nearby drivers, fare - everything the mobile needs to render the booking map'
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['pickup', 'drop'],
+      properties: {
+        pickup: {
+          type: 'object',
+          properties: {
+            lat: { type: 'number', example: 28.4744 },
+            lng: { type: 'number', example: 77.4920 }
+          }
+        },
+        drop: {
+          type: 'object',
+          properties: {
+            lat: { type: 'number', example: 28.4800 },
+            lng: { type: 'number', example: 77.5000 }
+          }
+        },
+        userType: {
+          type: 'string',
+          enum: ['student', 'regular'],
+          default: 'regular'
+        }
+      }
+    }
+  })
+  @ApiResponse({ status: 200, description: 'Map preview data returned' })
+  @ApiResponse({ status: 400, description: 'Invalid locations or out of service area' })
+  async getMapPreview(
+    @Body() body: {
+      pickup: { lat: number; lng: number };
+      drop: { lat: number; lng: number };
+      userType?: 'student' | 'regular';
+    }
+  ) {
+    const { pickup, drop, userType = 'regular' } = body;
+
+    console.log('🗺️ [RidersController] Map preview requested:', {
+      pickup,
+      drop,
+      userType,
+      timestamp: new Date().toISOString(),
+    });
+
+    // Validate both locations are in service area
+    const validation = this.geofenceService.validateRideLocations(pickup, drop);
+
+    if (!validation.valid) {
+      console.warn('⚠️ [RidersController] Locations outside service area:', {
+        pickup,
+        drop,
+        message: validation.message,
+      });
+
+      return {
+        success: false,
+        serviceAvailable: false,
+        message: validation.message,
+        messageHi: validation.messageHi
+      };
+    }
+
+    console.log('✅ [RidersController] Locations validated successfully');
+
+    // Calculate distance (Haversine formula)
+    const distance = this.geofenceService.calculateDistance(
+      pickup.lat,
+      pickup.lng,
+      drop.lat,
+      drop.lng
+    );
+
+    console.log('📏 [RidersController] Distance calculated:', {
+      distance: `${distance.toFixed(2)} km`,
+    });
+
+    // Calculate estimated time
+    const estimatedDuration = this.geofenceService.calculateEstimatedTime(distance);
+
+    console.log('⏱️ [RidersController] Estimated duration:', {
+      duration: `${estimatedDuration} min`,
+    });
+
+    // Calculate fare (with student discount if applicable)
+    const fareBreakdown = this.fareService.calculateFare(
+      distance,
+      estimatedDuration,
+      userType
+    );
+
+    console.log('💰 [RidersController] Fare calculated:', {
+      total: fareBreakdown.riderPays,
+      userType,
+      discount: fareBreakdown.breakdown.discount || 0,
+    });
+
+    // Find nearby available drivers (5km radius, max 20 drivers)
+    console.log('🔍 [RidersController] Searching for nearby drivers...');
+
+    const nearbyCaptains = await this.locationService.findNearbyCaptains(
+      pickup.lat,
+      pickup.lng,
+      5, // 5km radius
+      20 // Max 20 drivers
+    );
+
+    console.log('🚗 [RidersController] Nearby captains found:', {
+      total: nearbyCaptains.length,
+    });
+
+    // Filter out busy drivers and get detailed info
+    const availableDrivers = [];
+    for (const captain of nearbyCaptains) {
+      const isBusy = await this.locationService.isCaptainBusy(captain.driverId);
+      if (!isBusy) {
+        // Get driver metadata (heading, speed)
+        const location = await this.locationService.getCaptainLocation(captain.driverId);
+        if (location) {
+          // Calculate ETA for this driver to pickup
+          const driverEta = Math.ceil(captain.distance * 2.4); // 2.4 min per km
+
+          availableDrivers.push({
+            id: captain.driverId,
+            coordinates: {
+              lat: location.latitude,
+              lng: location.longitude
+            },
+            heading: location.heading || 0,
+            speed: location.speed || 0,
+            distance: captain.distance, // km from pickup
+            eta: driverEta // minutes to reach pickup
+          });
+        }
+      }
+    }
+
+    console.log('✅ [RidersController] Available drivers filtered:', {
+      available: availableDrivers.length,
+      busy: nearbyCaptains.length - availableDrivers.length,
+    });
+
+    // Calculate map bounds to fit pickup, drop, and drivers
+    const allPoints = [
+      pickup,
+      drop,
+      ...availableDrivers.map(d => d.coordinates)
+    ];
+
+    const bounds = this.calculateMapBounds(allPoints);
+    const center = {
+      lat: (pickup.lat + drop.lat) / 2,
+      lng: (pickup.lng + drop.lng) / 2
+    };
+
+    // Get nearest driver ETA
+    const nearestDriverEta = availableDrivers.length > 0
+      ? Math.min(...availableDrivers.map(d => d.eta))
+      : null;
+
+    // Fetch route polyline from Google Directions API
+    console.log('🗺️ [RidersController] Fetching route polyline from Google Maps...');
+    let routePolyline: string | null = null;
+    try {
+      const directions = await this.googleMapsService.getDirections(pickup, drop);
+      if (directions) {
+        routePolyline = directions.polyline;
+        console.log('✅ [RidersController] Route polyline fetched successfully', {
+          polylineLength: routePolyline?.length,
+          distance: directions.distance,
+          duration: directions.duration,
+        });
+      } else {
+        console.warn('⚠️ [RidersController] No route returned from Google Maps');
+      }
+    } catch (error) {
+      // Log error but don't fail the request
+      console.error('❌ [RidersController] Failed to fetch route polyline:', {
+        error: error.message,
+        stack: error.stack,
+      });
+    }
+
+    console.log('📦 [RidersController] Preparing map preview response:', {
+      hasRoute: !!routePolyline,
+      driversCount: availableDrivers.length,
+      fare: fareBreakdown.riderPays,
+      distance,
+    });
+
+    // Return EVERYTHING the mobile needs (backend-heavy!)
+    return {
+      success: true,
+      serviceAvailable: true,
+
+      // Map configuration (backend calculates camera position)
+      mapConfig: {
+        center,
+        bounds,
+        zoom: this.calculateZoomLevel(distance)
+      },
+
+      // Markers for pickup and drop
+      markers: {
+        pickup: {
+          coordinates: pickup,
+          title: 'Pickup Location',
+          icon: 'pickup'
+        },
+        drop: {
+          coordinates: drop,
+          title: 'Drop Location',
+          icon: 'drop'
+        }
+      },
+
+      // Nearby available drivers (real-time positions)
+      nearbyDrivers: availableDrivers,
+
+      // Route polyline (Google Directions API)
+      route: routePolyline ? {
+        polyline: routePolyline
+      } : null,
+
+      // Ride information (backend calculates everything)
+      rideInfo: {
+        distance, // km
+        estimatedDuration, // minutes
+        fare: {
+          total: fareBreakdown.riderPays, // Just show total
+          currency: 'INR',
+          displayText: fareBreakdown.displayText.fare,
+          displayTextHi: fareBreakdown.displayTextHi.fare
+        },
+        savings: fareBreakdown.comparison.youSave > 0 ? {
+          amount: fareBreakdown.comparison.youSave,
+          percent: fareBreakdown.comparison.percentSaved,
+          displayText: fareBreakdown.displayText.savings,
+          displayTextHi: fareBreakdown.displayTextHi.savings
+        } : null
+      },
+
+      // Availability information
+      availability: {
+        driversNearby: availableDrivers.length,
+        estimatedWaitTime: availableDrivers.length > 0 ? nearestDriverEta : null,
+        message: availableDrivers.length > 0
+          ? `${availableDrivers.length} drivers nearby`
+          : 'No drivers available right now',
+        messageHi: availableDrivers.length > 0
+          ? `${availableDrivers.length} drivers आपके पास हैं`
+          : 'अभी कोई driver available नहीं है'
+      }
+    };
+  }
+
+  /**
+   * Calculate map bounds to fit all points
+   * Helper method for map-preview
+   */
+  private calculateMapBounds(points: Array<{ lat: number; lng: number }>) {
+    if (points.length === 0) {
+      return null;
+    }
+
+    let minLat = points[0].lat;
+    let maxLat = points[0].lat;
+    let minLng = points[0].lng;
+    let maxLng = points[0].lng;
+
+    for (const point of points) {
+      minLat = Math.min(minLat, point.lat);
+      maxLat = Math.max(maxLat, point.lat);
+      minLng = Math.min(minLng, point.lng);
+      maxLng = Math.max(maxLng, point.lng);
+    }
+
+    // Add 10% padding
+    const latPadding = (maxLat - minLat) * 0.1;
+    const lngPadding = (maxLng - minLng) * 0.1;
+
+    return {
+      northeast: {
+        lat: maxLat + latPadding,
+        lng: maxLng + lngPadding
+      },
+      southwest: {
+        lat: minLat - latPadding,
+        lng: minLng - lngPadding
+      }
+    };
+  }
+
+  /**
+   * Calculate appropriate zoom level based on distance
+   * Helper method for map-preview
+   */
+  private calculateZoomLevel(distanceKm: number): number {
+    // Zoom levels (approximate):
+    // 15+ = Very close (< 1km)
+    // 14 = Close (1-2km)
+    // 13 = Medium (2-5km)
+    // 12 = Far (5-10km)
+    // 11- = Very far (> 10km)
+
+    if (distanceKm < 1) return 15;
+    if (distanceKm < 2) return 14;
+    if (distanceKm < 5) return 13;
+    if (distanceKm < 10) return 12;
+    return 11;
   }
 }
