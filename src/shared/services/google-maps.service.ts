@@ -160,4 +160,128 @@ export class GoogleMapsService {
 
     return poly;
   }
+
+  /**
+   * Search places using Google Places Autocomplete API
+   * Backend-Heavy: Protects API key, enables caching
+   */
+  async searchPlaces(query: string): Promise<any[]> {
+    if (!this.apiKey) {
+      this.logger.error('❌ Cannot search places: Google Maps API key not configured');
+      return [];
+    }
+
+    try {
+      const url = `${this.baseUrl}/place/autocomplete/json`;
+
+      const params = {
+        input: query,
+        key: this.apiKey,
+      };
+
+      this.logger.log(`🔍 Searching places: "${query}"`);
+
+      const response = await axios.get(url, {
+        params,
+        timeout: 5000,
+      });
+
+      if (response.data.status === 'ZERO_RESULTS') {
+        this.logger.log(`⚠️ No results found for: "${query}"`);
+        return [];
+      }
+
+      if (response.data.status !== 'OK') {
+        this.logger.error(`❌ Places Autocomplete API error: ${response.data.status}`);
+        return [];
+      }
+
+      this.logger.log(`✅ Found ${response.data.predictions.length} places`);
+
+      return response.data.predictions;
+    } catch (error) {
+      this.logger.error('❌ Failed to search places:', error.message);
+      return [];
+    }
+  }
+
+  /**
+   * Get place details using Google Place Details API
+   * Backend-Heavy: Protects API key, enables caching
+   */
+  async getPlaceDetails(placeId: string): Promise<any> {
+    if (!this.apiKey) {
+      this.logger.error('❌ Cannot get place details: Google Maps API key not configured');
+      throw new Error('Google Maps API key not configured');
+    }
+
+    try {
+      const url = `${this.baseUrl}/place/details/json`;
+
+      const params = {
+        place_id: placeId,
+        key: this.apiKey,
+      };
+
+      this.logger.log(`📍 Getting place details: ${placeId}`);
+
+      const response = await axios.get(url, {
+        params,
+        timeout: 5000,
+      });
+
+      if (response.data.status !== 'OK') {
+        this.logger.error(`❌ Place Details API error: ${response.data.status}`);
+        throw new Error(`Place Details API error: ${response.data.status}`);
+      }
+
+      this.logger.log(`✅ Place details retrieved: ${response.data.result.name}`);
+
+      return response.data.result;
+    } catch (error) {
+      this.logger.error('❌ Failed to get place details:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Reverse geocode coordinates to address
+   * Backend-Heavy: Protects API key, enables caching
+   */
+  async reverseGeocode(lat: number, lng: number): Promise<any> {
+    if (!this.apiKey) {
+      this.logger.error('❌ Cannot reverse geocode: Google Maps API key not configured');
+      throw new Error('Google Maps API key not configured');
+    }
+
+    try {
+      const url = `${this.baseUrl}/geocode/json`;
+
+      const params = {
+        latlng: `${lat},${lng}`,
+        key: this.apiKey,
+      };
+
+      this.logger.log(`📍 Reverse geocoding: ${lat}, ${lng}`);
+
+      const response = await axios.get(url, {
+        params,
+        timeout: 5000,
+      });
+
+      if (response.data.status !== 'OK') {
+        this.logger.error(`❌ Geocoding API error: ${response.data.status}`);
+        throw new Error(`Geocoding API error: ${response.data.status}`);
+      }
+
+      const result = response.data.results[0];
+
+      this.logger.log(`✅ Address retrieved: ${result.formatted_address}`);
+
+      return result;
+    } catch (error) {
+      this.logger.error('❌ Failed to reverse geocode:', error.message);
+      throw error;
+    }
+  }
 }

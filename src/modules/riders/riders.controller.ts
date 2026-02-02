@@ -495,8 +495,11 @@ export class RidersController {
       nearbyDrivers: availableDrivers,
 
       // Route polyline (Google Directions API)
+      // Backend decodes polyline so mobile doesn't have to
       route: routePolyline ? {
-        polyline: routePolyline
+        polyline: routePolyline,
+        // Decoded coordinates ready for mobile to render
+        coordinates: this.decodePolyline(routePolyline)
       } : null,
 
       // Ride information (backend calculates everything)
@@ -504,10 +507,19 @@ export class RidersController {
         distance, // km
         estimatedDuration, // minutes
         fare: {
-          total: fareBreakdown.riderPays, // Just show total
+          total: fareBreakdown.riderPays,
           currency: 'INR',
           displayText: fareBreakdown.displayText.fare,
-          displayTextHi: fareBreakdown.displayTextHi.fare
+          displayTextHi: fareBreakdown.displayTextHi.fare,
+          // PHASE 1: Detailed fare breakdown
+          breakdown: {
+            baseFare: fareBreakdown.breakdown.base,
+            distanceFare: fareBreakdown.breakdown.distance,
+            timeFare: fareBreakdown.breakdown.time,
+            surgeFare: fareBreakdown.breakdown.surge || 0,
+            discount: fareBreakdown.breakdown.discount || 0,
+            total: fareBreakdown.riderPays
+          }
         },
         savings: fareBreakdown.comparison.youSave > 0 ? {
           amount: fareBreakdown.comparison.youSave,
@@ -527,7 +539,49 @@ export class RidersController {
         messageHi: availableDrivers.length > 0
           ? `${availableDrivers.length} drivers आपके पास हैं`
           : 'अभी कोई driver available नहीं है'
-      }
+      },
+
+      // PHASE 1: Available vehicle types (dynamic from backend)
+      vehicleTypes: [
+        {
+          id: 'bike',
+          name: 'Bike',
+          nameHi: 'बाइक',
+          icon: '🏍️',
+          capacity: 1,
+          fare: fareBreakdown.riderPays,
+          eta: nearestDriverEta || estimatedDuration,
+          available: availableDrivers.length > 0,
+          isDefault: true
+        }
+        // TODO: Add more vehicle types (auto, cab) when available
+      ],
+
+      // PHASE 1: Available payment methods (dynamic from backend)
+      paymentMethods: [
+        {
+          id: 'cash',
+          name: 'Cash',
+          nameHi: 'नकद',
+          icon: '💵',
+          available: true,
+          isDefault: true
+        }
+        // TODO: Add more payment methods (UPI, card, wallet) when integrated
+      ],
+
+      // PHASE 1: Available coupons/offers (dynamic from backend)
+      availableCoupons: [
+        // TODO: Fetch from coupons service when implemented
+        // Example:
+        // {
+        //   code: 'FIRST50',
+        //   discount: 50,
+        //   discountType: 'flat',
+        //   description: 'Flat ₹50 off on your first ride',
+        //   descriptionHi: 'पहली राइड पर ₹50 की छूट'
+        // }
+      ]
     };
   }
 
@@ -585,5 +639,220 @@ export class RidersController {
     if (distanceKm < 5) return 13;
     if (distanceKm < 10) return 12;
     return 11;
+  }
+
+  /**
+   * Decode Google Maps polyline
+   * Backend-Heavy: Decode polyline server-side so mobile doesn't have to
+   */
+  private decodePolyline(encoded: string): Array<{ lat: number; lng: number }> {
+    const poly: Array<{ lat: number; lng: number }> = [];
+    let index = 0;
+    const len = encoded.length;
+    let lat = 0;
+    let lng = 0;
+
+    while (index < len) {
+      let b: number;
+      let shift = 0;
+      let result = 0;
+
+      do {
+        b = encoded.charCodeAt(index++) - 63;
+        result |= (b & 0x1f) << shift;
+        shift += 5;
+      } while (b >= 0x20);
+
+      const dlat = (result & 1) !== 0 ? ~(result >> 1) : result >> 1;
+      lat += dlat;
+
+      shift = 0;
+      result = 0;
+
+      do {
+        b = encoded.charCodeAt(index++) - 63;
+        result |= (b & 0x1f) << shift;
+        shift += 5;
+      } while (b >= 0x20);
+
+      const dlng = (result & 1) !== 0 ? ~(result >> 1) : result >> 1;
+      lng += dlng;
+
+      poly.push({
+        lat: lat / 1e5,
+        lng: lng / 1e5,
+      });
+    }
+
+    return poly;
+  }
+
+  /**
+   * ═══════════════════════════════════════════════════════════════
+   * GOOGLE MAPS PROXY ENDPOINTS (Backend-Heavy Security)
+   * ═══════════════════════════════════════════════════════════════
+   *
+   * All Google Maps API calls MUST go through backend to:
+   * - Protect API key from exposure
+   * - Implement rate limiting
+   * - Cache responses to reduce costs
+   * - Monitor and log usage
+   */
+
+  /**
+   * Search Places Proxy
+   * GET /api/v1/riders/search-places
+   *
+   * Proxies Google Places Autocomplete API through backend
+   */
+  @Get('search-places')
+  @ApiOperation({
+    summary: 'Search places (Google Maps proxy)',
+    description: 'Backend proxy for Google Places Autocomplete - protects API key and enables caching'
+  })
+  @ApiQuery({ name: 'query', required: true, description: 'Search query (min 3 characters)' })
+  @ApiResponse({ status: 200, description: 'Search results returned' })
+  @ApiResponse({ status: 400, description: 'Query too short or invalid' })
+  async searchPlaces(
+    @Query('query') query: string
+  ) {
+    if (!query || query.length < 3) {
+      return {
+        success: false,
+        message: 'Search query must be at least 3 characters',
+        results: []
+      };
+    }
+
+    try {
+      console.log('🔍 [RidersController] Proxying place search:', query);
+
+      // Call Google Maps service (backend handles API key)
+      const predictions = await this.googleMapsService.searchPlaces(query);
+
+      console.log('✅ [RidersController] Found', predictions.length, 'places');
+
+      // Format results for mobile
+      const results = predictions.map((prediction: any) => ({
+        placeId: prediction.place_id,
+        description: prediction.description,
+        mainText: prediction.structured_formatting?.main_text || prediction.description,
+        secondaryText: prediction.structured_formatting?.secondary_text || '',
+      }));
+
+      return {
+        success: true,
+        results
+      };
+    } catch (error: any) {
+      console.error('❌ [RidersController] Place search failed:', error.message);
+      return {
+        success: false,
+        message: 'Search failed. Please try again.',
+        results: []
+      };
+    }
+  }
+
+  /**
+   * Get Place Details Proxy
+   * GET /api/v1/riders/place-details
+   *
+   * Proxies Google Place Details API through backend
+   */
+  @Get('place-details')
+  @ApiOperation({
+    summary: 'Get place details (Google Maps proxy)',
+    description: 'Backend proxy for Google Place Details API - returns coordinates and formatted address'
+  })
+  @ApiQuery({ name: 'placeId', required: true, description: 'Google Place ID' })
+  @ApiResponse({ status: 200, description: 'Place details returned' })
+  @ApiResponse({ status: 400, description: 'Invalid place ID' })
+  async getPlaceDetails(
+    @Query('placeId') placeId: string
+  ) {
+    if (!placeId) {
+      return {
+        success: false,
+        message: 'Place ID is required'
+      };
+    }
+
+    try {
+      console.log('📍 [RidersController] Proxying place details:', placeId);
+
+      // Call Google Maps service (backend handles API key)
+      const details = await this.googleMapsService.getPlaceDetails(placeId);
+
+      console.log('✅ [RidersController] Place details retrieved:', details.name);
+
+      return {
+        success: true,
+        placeId: details.place_id,
+        formattedAddress: details.formatted_address,
+        coordinates: {
+          lat: details.geometry.location.lat,
+          lng: details.geometry.location.lng
+        }
+      };
+    } catch (error: any) {
+      console.error('❌ [RidersController] Place details failed:', error.message);
+      return {
+        success: false,
+        message: 'Failed to get place details. Please try again.'
+      };
+    }
+  }
+
+  /**
+   * Reverse Geocode Proxy
+   * GET /api/v1/riders/reverse-geocode
+   *
+   * Proxies Google Reverse Geocoding API through backend
+   */
+  @Get('reverse-geocode')
+  @ApiOperation({
+    summary: 'Reverse geocode coordinates (Google Maps proxy)',
+    description: 'Backend proxy for Google Reverse Geocoding API - converts lat/lng to address'
+  })
+  @ApiQuery({ name: 'lat', required: true, description: 'Latitude' })
+  @ApiQuery({ name: 'lng', required: true, description: 'Longitude' })
+  @ApiResponse({ status: 200, description: 'Address returned' })
+  @ApiResponse({ status: 400, description: 'Invalid coordinates' })
+  async reverseGeocode(
+    @Query('lat') lat: string,
+    @Query('lng') lng: string
+  ) {
+    const latitude = parseFloat(lat);
+    const longitude = parseFloat(lng);
+
+    if (isNaN(latitude) || isNaN(longitude)) {
+      return {
+        success: false,
+        message: 'Invalid coordinates'
+      };
+    }
+
+    try {
+      console.log('📍 [RidersController] Proxying reverse geocode:', { lat: latitude, lng: longitude });
+
+      // Call Google Maps service (backend handles API key)
+      const result = await this.googleMapsService.reverseGeocode(latitude, longitude);
+
+      console.log('✅ [RidersController] Address retrieved:', result.formatted_address);
+
+      return {
+        success: true,
+        formattedAddress: result.formatted_address,
+        addressComponents: result.address_components
+      };
+    } catch (error: any) {
+      console.error('❌ [RidersController] Reverse geocode failed:', error.message);
+      return {
+        success: false,
+        message: 'Failed to get address. Please try again.',
+        formattedAddress: 'Unknown location'
+      };
+    }
   }
 }
